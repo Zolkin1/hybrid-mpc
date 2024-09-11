@@ -16,14 +16,16 @@ v0 = zeros(robot.nv, 1);
 t0 = 0;
 tf = 2;
 
+%TODO: Debug for pinned foot.
+
 q_target = q0(3:2+robot.nj_act);
 q_target(2) = q_target(2) + 0.5;
 v_target = v0(3:2+robot.nj_act);
 
 controller.q_target = q_target;
 controller.v_target = v_target;
-controller.p = [0 60 0 60]';
-controller.d = [0 12 0 12]';
+controller.p = [0 0 0 0]'; %[0 60 0 60]';
+controller.d = [0 0 0 0]'; %[0 12 0 12]';
 controller.saturation = [30 30 30 30];
 controller.Compute = @PDController;
 

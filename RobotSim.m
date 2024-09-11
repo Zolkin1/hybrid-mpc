@@ -30,7 +30,7 @@ while t0 < tf
         te = [te; t0];
         
         yf = deval(sol, sol.xe);
-        [stop, y0] = ContactResponse(sol.xe, yf, robot);
+        [stop, y0, robot] = ContactResponse(sol.xe, yf, robot);
     else
         t0 = sol.x(length(sol.x));
     end
@@ -60,7 +60,7 @@ function [height, isterminal, direction] = GroundContact(t, y, robot)
     direction = -1;
 end
 
-function [stop, y] = ContactResponse(t, y, robot)
+function [stop, y, robot] = ContactResponse(t, y, robot)
     % Two options:
     % (a) Change which leg is swing vs stance by updating the kinematic
     % constraint
@@ -69,10 +69,12 @@ function [stop, y] = ContactResponse(t, y, robot)
 
     if (robot.stance == robot.leg_1)
         robot.stance = robot.leg_2;
+        disp("Set contact to 2");
         % TODO: Remove these
         y(4) = 0.6;
         y(6) = 0;
     else
+        disp("Set contact to 1");
         robot.stance = robot.leg_1;
         y(4) = 0;
         y(6) = 0.6;
