@@ -120,14 +120,28 @@ robot.appearance.body{5} = ...
 robot.camera.up = [0 1 0];
 robot.camera.direction = [0.0  0.7 2.1];
 %robot.camera.body = 1;
-% Other constants
+
+% Robot links
+robot.link{1} = [0; robot.calf_length];
+robot.link{2} = [0; robot.thigh_length];
+robot.link{3} = [0; robot.torso_length];
+robot.link{4} = [0; -robot.calf_length];
+robot.link{5} = [0; -robot.calf_length];
+
+% ---------- Other constants ---------- %
 robot.nj_act = 4;
+robot.act_coords = [2 3 4 5];
 robot.nq = 5;
 robot.nv = 5;
 
-robot.leg_1 = 3;
+robot.leg_1 = 1;
 robot.leg_2 = 5;
-robot.stance = robot.leg_2;
+robot.stance = robot.leg_1;
+robot.swing = robot.leg_2;
 
+robot.foot_r = [0;-0.4];
+
+% ---------- Global position ---------- %
+robot.torso_pos = [0;0];
+robot.torso_vel = [0;0];
 end
-

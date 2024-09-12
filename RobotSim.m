@@ -1,10 +1,10 @@
-function [t, qout, qdout, te, qe, qde] = RobotSim(robot, q, qd, t0, tf, tdensity, controller)
+function [t, qout, qdout, pos, te, qe, qde, pos_e] = RobotSim(robot, q, qd, pos0, t0, tf, tdensity, controller)
 %SIMULATE Simulates a robot
 %   
 
 % Forward integrate with ODE 45
 
-y0 = [q; qd];
+y0 = [q; qd; pos0];
 
 % E = odeEvent(EventFcn=@(t,y)GroundContact(t,y,robot),...
 %         Direction="descending", ...
@@ -16,13 +16,15 @@ y0 = [q; qd];
 t = linspace(t0, tf, floor((tf-t0)*tdensity));
 qout = zeros(robot.nq, length(t));
 qdout = zeros(robot.nv, length(t));
+pos = zeros(2, length(t));
 t_idx = 1;
 
 te = [];
-qe = zeros(robot.nq, 1);
-qde = zeros(robot.nq, 1);
+qe = [];
+qde = [];
+pos_e = [];
 
-options = odeset('Events', @(t,y)GroundContact(t,y,robot),'Refine',4);
+options = odeset('Events', @(t,y)GroundContact(t,y,robot),'Refine',8);
 while t0 < tf
     sol = ode45(@(t, y) odefun(t, y, robot, controller), [t0, tf], y0, options);
     if (sol.x(length(sol.x)) < tf) 
@@ -31,6 +33,14 @@ while t0 < tf
         
         yf = deval(sol, sol.xe);
         [stop, y0, robot] = ContactResponse(sol.xe, yf, robot);
+
+        q = y0(1:robot.nq);
+        v = y0(robot.nq+1:robot.nq+robot.nv);
+        qe = [qe, q];
+        qde = [qde, v];
+
+        pos_e = [pos_e, y0(robot.nq+robot.nv+1:end)];
+        robot.last_contact = t0;
     else
         t0 = sol.x(length(sol.x));
     end
@@ -39,6 +49,7 @@ while t0 < tf
         y_t = deval(sol, t(t_idx));
         qout(:, t_idx) = y_t(1:robot.nq);
         qdout(:, t_idx) = y_t(robot.nq + 1:robot.nq + robot.nv);
+        pos(:, t_idx) = y_t(robot.nq + robot.nv + 1:end);
         t_idx = t_idx + 1;
     end
 end
@@ -49,11 +60,7 @@ function [height, isterminal, direction] = GroundContact(t, y, robot)
     % Return distance of foot from ground
     q = y(1:robot.nq);
     v = y(robot.nq + 1: robot.nq + robot.nv);
-    swing_idx = robot.leg_1;
-     if (robot.stance == robot.leg_1)
-        swing_idx = robot.leg_2;        
-    end
-    [pos, vel] = ForwardKinematics(robot, q, v, swing_idx, [0;-robot.calf_length]);
+    [pos, vel] = ForwardKinematics(robot, q, v, robot.swing, [0;-robot.calf_length]);
 
     height = pos(2);
     isterminal = 1;
@@ -67,34 +74,64 @@ function [stop, y, robot] = ContactResponse(t, y, robot)
     % (b) Switch the joint angles and update the global positions. Keep
     % the same stance and swing feet
 
-    if (robot.stance == robot.leg_1)
-        robot.stance = robot.leg_2;
-        disp("Set contact to 2");
-        % TODO: Remove these
-        y(4) = 0.6;
-        y(6) = 0;
-    else
-        disp("Set contact to 1");
-        robot.stance = robot.leg_1;
-        y(4) = 0;
-        y(6) = 0.6;
-    end
+    %disp("Contact");
+    %t
 
-    disp("Contact");
+    q = y(1:robot.nq);
+    v = y(robot.nq+1:robot.nq+robot.nv);
+
+    % Reset map is given by
+    % q+ = (I - M^-1*J^T*(J*M^-1*J^T)^-1*J)q-
+    J = BodyJacobianFD(robot, q, robot.swing, robot.foot_r);
+    [M, C] = HandC(robot, q, v, {});
+    Minv = inv(M);
+    vplus = (eye(robot.nq) - Minv*J'*inv(J*Minv*J')*J)*v;
+
+    %J*v
+    %J*vplus
+
+    % Now switch the joints
+    % Calculate angle to the ground
+    pos_joint = ForwardKinematics(robot, q, v, robot.swing, [0;0]);
+    pos_foot = ForwardKinematics(robot, q, v, robot.swing, robot.foot_r);
+    pos = pos_joint - pos_foot;
+    q(1) = -atan(pos(1)/pos(2)); %(0 + atan2(pos(2), -pos(1)));
+
+    q(2) = -q(5);
+    q(3) = -q(4);
+
+    q(4) = -y(3);
+    q(5) = -y(2);
+
+    % Assign to y
+    y(1:robot.nq) = q;
+    y(robot.nq+1:robot.nq+robot.nv) = vplus;
 
     % Also, apply the reset map
     % TODO: Add in the real reset map, for now set all velocities to 0
-    y(robot.nq + 1: robot.nq + robot.nv) = zeros(robot.nv, 1);
-    y(2) = 1;
+    % y(robot.nq + 1: robot.nq + robot.nv) = zeros(robot.nv, 1);
+    % y = zeros(length(y), 1);
+    % y(1) = 0.0;
+    % y(2) = 0.8;
+    % y(4) = 0.6;
     stop = false;
 end
 
 function dydt = odefun(t, y, robot, controller)
-    dydt = zeros(2*robot.nv, 1);
+    dydt = zeros(2*robot.nv + 2, 1);
     q = y(1:robot.nq);
     v = y(robot.nq + 1: robot.nq + robot.nv);
     dydt(1:robot.nv) = v;
+
+    q_act = GetActuatedCoords(q, robot);
+    v_act = GetActuatedCoords(v, robot);
+    tau_act = controller.Compute(t, q_act, v_act, controller);
+
     dydt(robot.nv + 1: 2*robot.nv) = ...
-        FDab(robot, q, v, [0; 0; 0; ...
-        controller.Compute(t, q(3:2+robot.nj_act), v(3:2+robot.nj_act), controller)]);
+        FDab(robot, q, v, [0, tau_act(1), tau_act(2), tau_act(3), tau_act(4)]);
+
+    J = BodyJacobianFD(robot, q, 3, [0;0]);
+    dydt(2*robot.nv+1:end) = J*v;
+    % TODO: Do torso acc via casadi
 end
+
