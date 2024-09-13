@@ -1,8 +1,8 @@
 function tau = PDController(t, q, v, controller)
 %PDCONTROLLER Computes torques
 %   
-q_error = -controller.q_target + q;
-v_error = -controller.v_target + v;
+q_error = controller.q_target - q;
+v_error = controller.v_target - v;
 
 %controller.q_error_past = [q_error, controller.q_error_past];
 %controller.v_error_past = [v_error, controller.v_error_past];

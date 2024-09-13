@@ -8,24 +8,22 @@ robot = CreateFiveLink();
 
 q0 = zeros(robot.nq, 1);
 q0(1) = 0.0;
-q0(2) = -0.1; % 0.8
-q0(3) = -0.3;
-q0(4) = 0.6; % 0.6
-q0(5) = 0;
+q0(2) = -0.2; % 0.8
+q0(4) = 0.8; % 0.6
+q0(5) = -0.3;
 v0 = zeros(robot.nv, 1);
 
 t0 = 0;
-tf = 2.5;
+tf = 5.5;
 
 q_target = GetActuatedCoords(q0, robot); %(3:2+robot.nj_act);
-q_target(2) = q_target(2) + 0.5;
 v_target = GetActuatedCoords(v0, robot); %(3:2+robot.nj_act);
 
 controller.q_target = q_target;
 controller.v_target = v_target;
-controller.p = [0 3 0 0]'; %[0 60 0 60]';
-controller.d = [0 0 0 0]'; %[0 12 0 12]';
-controller.saturation = [30 30 30 30];
+controller.p = [3000 3000 3000 3000]'; %[0 60 0 60]';
+controller.d = [120 120 120 120]'; %[0 12 0 12]';
+controller.saturation = [3000 3000 3000 3000];
 controller.Compute = @PDController;
 
 robot.torso_pos = ForwardKinematics(robot, q0, v0, 3, [0;0]);
@@ -63,14 +61,15 @@ end
     zeros(robot.nv, 1), 5, [0;-0.4]);
 pos
 
-%AnimateRobot(robot, t, q, base_pos, te, qe, qde, pos_e);
+AnimateRobot(robot, t, q, base_pos, te, qe, qde, pos_e);
 
-plot(tdata, qdata(4, :));
+figure;
+plot(tdata, qdata(2, :));
 hold on;
-plot(tdata, q_target(2)*ones(length(qdata),1));
+plot(tdata, q_target(1)*ones(length(qdata),1));
 hold off;
 xlabel("Time")
-ylabel("right calf position")
+ylabel("q2 angle (rad)")
 legend(["actual", "target"])
 
 figure;

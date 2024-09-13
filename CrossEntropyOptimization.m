@@ -24,13 +24,14 @@ for n = 1:cem_settings.max_iters
     %ycheck = costfcn(xsorted(:,1))
 
     % Update mean
-    xmean = zeros(xsize, 1);
-    for i = 1:nelite
-        xmean = xmean + xsorted(:, i);
-    end
-    xmean = xmean/nelite;
+    % xmean = zeros(xsize, 1);
+    % for i = 1:nelite
+    %     xmean = xmean + xsorted(:, i);
+    % end
+    % xmean = xmean/nelite;
     
     % Update variance
+    % TODO: Check this - should it be diagonal?
     xvar = zeros(xsize);
     for i = 1:nelite
        xvar = xvar + (xsorted(:, i) - xmean)*(xsorted(:, i) - xmean)';

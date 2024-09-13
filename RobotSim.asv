@@ -13,7 +13,7 @@ y0 = [q; qd; pos0];
 % F = ode(ODEFcn=@(t, y) odefun(t, y, robot, controller), InitialValue=y0, EventDefinition=E);
 % S = solve(F, t0, tf, Refine=1);
 
-t = linspace(t0, tf, floor((tf-t0)*tdensity)-1);
+t = linspace(t0, tf, floor((tf-t0)*tdensity));
 qout = zeros(robot.nq, length(t));
 qdout = zeros(robot.nv, length(t));
 pos = zeros(2, length(t));
@@ -25,28 +25,17 @@ qde = [];
 pos_e = [];
 robot.last_contact = -1;
 options = odeset('Events', @(t,y)GroundContact(t,y,robot),'Refine',8);
-global last_contact_time;
-
 while t0 < tf
     sol = ode45(@(t, y) odefun(t, y, robot, controller), [t0, tf], y0, options);
     if (sol.x(length(sol.x)) < tf) 
-        t0 = sol.xe(1);
+        t0 = sol.xe;
         te = [te; t0];
         if abs(t0 - robot.last_contact) < 1e-2
-            warning("Robot contacts too close!");
+            
         end
         
-        yf = deval(sol, sol.xe(1));
-        %GroundContact(t0,yf,robot)
-
-        %qf = yf(1:robot.nq);
-        %vf = yf(robot.nq + 1: robot.nq + robot.nv);
-        %[postemp, vel] = ForwardKinematics(robot, qf, vf, robot.swing, [0;-robot.calf_length]);
-        %postemp(2)
-
-        [stop, y0, robot, controller] = ContactResponse(sol.xe(1), yf, robot, controller);
-
-        %GroundContact(t0,y0,robot)
+        yf = deval(sol, sol.xe);
+        [stop, y0, robot] = ContactResponse(sol.xe, yf, robot);
 
         q = y0(1:robot.nq);
         v = y0(robot.nq+1:robot.nq+robot.nv);
@@ -54,7 +43,7 @@ while t0 < tf
         qde = [qde, v];
 
         pos_e = [pos_e, y0(robot.nq+robot.nv+1:end)];
-        last_contact_time = t0;
+        robot.last_contact = t0;
     else
         t0 = sol.x(length(sol.x));
     end
@@ -68,22 +57,16 @@ while t0 < tf
     end
 end
 
-
 end
 
 function [height, isterminal, direction] = GroundContact(t, y, robot)
-    global last_contact_time;
-    %persistent last_contact_time;   % To store the time of the last event
-    if isempty(last_contact_time)
-        last_contact_time = -inf;
-    end
     % Return distance of foot from ground
     q = y(1:robot.nq);
     v = y(robot.nq + 1: robot.nq + robot.nv);
     [pos, vel] = ForwardKinematics(robot, q, v, robot.swing, [0;-robot.calf_length]);
     
-    if abs(t - last_contact_time) < 1e-2
-        height = 0.05;
+    if (abs(t - robot.last_contact) < 1e-2)
+        height = 1;
     else
         height = pos(2);
     end
@@ -91,7 +74,7 @@ function [height, isterminal, direction] = GroundContact(t, y, robot)
     direction = -1;
 end
 
-function [stop, y, robot, controller] = ContactResponse(t, y, robot, controller)
+function [stop, y, robot] = ContactResponse(t, y, robot)
     % Two options:
     % (a) Change which leg is swing vs stance by updating the kinematic
     % constraint
@@ -119,26 +102,13 @@ function [stop, y, robot, controller] = ContactResponse(t, y, robot, controller)
     pos_joint = ForwardKinematics(robot, q, v, robot.swing, [0;0]);
     pos_foot = ForwardKinematics(robot, q, v, robot.swing, robot.foot_r);
     pos = pos_joint - pos_foot;
-    q(1) = -atan2(pos(1), pos(2)); %-atan(pos(1)/pos(2));
+    q(1) = -atan(pos(1)/pos(2)); %(0 + atan2(pos(2), -pos(1)));
+
     q(2) = -q(5);
     q(3) = -q(4);
 
     q(4) = -y(3);
     q(5) = -y(2);
-
-    % Remap velocities
-    vplus_temp = vplus;
-    % TODO: What is the rotational velocity of the new ground contact?
-    % TODO: Remove
-    %vplus(1) = 0; %-vplus(1); %0.5;
-    vplus(2) = -vplus(5);
-    vplus(3) = -vplus(4);
-    vplus(4) = -vplus_temp(3);
-    vplus(5) = -vplus_temp(2);
-
-    % Update the controller
-    controller.q_target = -controller.q_target;
-    controller.v_target = -controller.v_target;
 
     % Assign to y
     y(1:robot.nq) = q;

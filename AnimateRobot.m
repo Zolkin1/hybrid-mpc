@@ -8,6 +8,7 @@ figure;
 title("Robot Animation")
 xlabel("x (m)")
 ylabel("y (m)")
+pause;
 
 offset = zeros(2,1);
 e_idx = 1;
@@ -22,9 +23,13 @@ for i = 1:length(t)
     end
     
     if i ~= 1 && e_idx <= length(te) && t(i) >= te(e_idx) && t(i-1) < te(e_idx)
-        swing_foot_pos = ForwardKinematics(robot, qe(:, e_idx), ve(:, e_idx), robot.swing, robot.foot_r);
-        offset = offset - swing_foot_pos
-        e_idx = e_idx + 1;
+        while e_idx <= length(te) && t(i) >= te(e_idx) && t(i-1) < te(e_idx)
+            swing_foot_pos = ForwardKinematics(robot, qe(:, e_idx), ve(:, e_idx), robot.swing, robot.foot_r);
+            swing_foot_pos
+            te(e_idx)
+            offset = -swing_foot_pos + offset
+            e_idx = e_idx + 1;
+        end
     end
     clf;
 
