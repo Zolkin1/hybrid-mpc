@@ -68,6 +68,10 @@ while t0 < tf
     end
 end
 
+t = t(1:end-1);
+qout = qout(:, 1:end-1);
+qdout = qdout(:, 1:end-1);
+pos = pos(:, 1:end-1);
 
 end
 
@@ -82,7 +86,7 @@ function [height, isterminal, direction] = GroundContact(t, y, robot)
     v = y(robot.nq + 1: robot.nq + robot.nv);
     [pos, vel] = ForwardKinematics(robot, q, v, robot.swing, [0;-robot.calf_length]);
     
-    if abs(t - last_contact_time) < 1e-2
+    if abs(t - last_contact_time) < 1e-1
         height = 0.05;
     else
         height = pos(2);
@@ -130,7 +134,7 @@ function [stop, y, robot, controller] = ContactResponse(t, y, robot, controller)
     vplus_temp = vplus;
     % TODO: What is the rotational velocity of the new ground contact?
     % TODO: Remove
-    %vplus(1) = 0; %-vplus(1); %0.5;
+    %vplus(1) = -vplus(1); %0.5;
     vplus(2) = -vplus(5);
     vplus(3) = -vplus(4);
     vplus(4) = -vplus_temp(3);
@@ -160,9 +164,9 @@ function dydt = odefun(t, y, robot, controller)
     v = y(robot.nq + 1: robot.nq + robot.nv);
     dydt(1:robot.nv) = v;
 
-    q_act = GetActuatedCoords(q, robot);
-    v_act = GetActuatedCoords(v, robot);
-    tau_act = controller.Compute(t, q_act, v_act, controller);
+    %q_act = GetActuatedCoords(q, robot);
+    %v_act = GetActuatedCoords(v, robot);
+    tau_act = controller.Compute(t, q, v, controller);
 
     dydt(robot.nv + 1: 2*robot.nv) = ...
         FDab(robot, q, v, [0, tau_act(1), tau_act(2), tau_act(3), tau_act(4)]);

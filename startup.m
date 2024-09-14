@@ -19,3 +19,4 @@
 %     below to that file.
 
 addpath( genpath( '/home/zolkin/Repos/spatial_v2/spatial_v2' ) );
+addpath('/home/zolkin/Repos/casadi/v3_6_6/casadi-3.6.6-linux64-matlab2018b');

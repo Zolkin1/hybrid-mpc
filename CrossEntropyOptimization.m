@@ -9,6 +9,7 @@ nelite = cem_settings.nelite;
 xsize = cem_settings.xsize;
 
 for n = 1:cem_settings.max_iters
+    n
     ysample = zeros(nsamples, 1);
     xsample = zeros(xsize, nsamples);
     parfor j = 1:nsamples

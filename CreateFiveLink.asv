@@ -88,7 +88,7 @@ robot.I{1} = mcI(calf_m, calf_com, calf_I);
 robot.I{4} = mcI(thigh_m, thigh_com, thigh_I);
 robot.I{5} = mcI(calf_m, calf_com, calf_I);
 
-%robot.gravity = [0; -9.81];
+robot.gravity = [0; -9.81];
 
 % ---------- Appearance ---------- %
 robot.appearance.base = ...
@@ -141,9 +141,7 @@ robot.swing = robot.leg_2;
 
 robot.foot_r = [0;-0.4];
 
-robot.torque_lims = [100; 100; 100; 100];
-robot.joint_bounds = [2*pi; 2*pi; 2*pi; 2*pi; 2*pi];
-robot.joint_vel_bounds = [100; 100; 100; 100; 100];
+robot.torq
 % ---------- Global position ---------- %
 robot.torso_pos = [0;0];
 robot.torso_vel = [0;0];

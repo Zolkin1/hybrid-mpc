@@ -9,11 +9,12 @@ close all;
 %% Run CEM
 robot = CreateFiveLink();
 
-q0 = zeros(robot.nq, 1);
-q0(1) = 0.0;
-q0(2) = 0.2; % 0.8
-q0(4) = 0.8; % 0.6
-q0(5) = -0.3;
+q0 = [-0.1; 0.1; -0.2; 0.8; -0.1];
+% q0 = zeros(robot.nq, 1);
+% q0(1) = 0.0;
+% q0(2) = 0.2; % 0.8
+% q0(4) = 0.8; % 0.6
+% q0(5) = -0.3;
 % q0(1) = 0.0;
 % q0(2) = 0.8; % 0.8
 % q0(4) = 0.6; % 0.6
@@ -51,16 +52,16 @@ pos0 = robot.torso_pos;
 % 
 % controller = CrossEntropyRobot(robot, costfcn, q0, v0, pos0, tf, cem_settings);
 
-dt = 0.05;
+dt = 0.1;
 times = t0:dt:tf;
 ntimes = length(times);
 
-cem_settings.nsamples = 1000;
+cem_settings.nsamples = 300;
 cem_settings.xsize = ntimes*robot.nj_act;
-cem_settings.var = 0.125*eye(cem_settings.xsize); % 0.125
+cem_settings.var = 1.125*eye(cem_settings.xsize); % 0.125
 cem_settings.mean = 0*ones(cem_settings.xsize, 1);
-cem_settings.nelite = 1;
-cem_settings.max_iters = 3;
+cem_settings.nelite = 5;
+cem_settings.max_iters = 5;
 
 cost_params.pose_target = q0; %[0, 0, 0, 0.1, -0.1];
 cost_params.pose_weight = [0, 0, 0, 0, 0];
@@ -80,7 +81,7 @@ controller.p = [50 50 50 50]';
 controller.d = [5 5 5 5]';
 controller.saturation = [3000 3000 3000 3000];
 controller.Compute = @(t,q, v, controller)...
-    PositionController(t, q, v, times, torquesmat, controller);
+    PositionController(t, q, v, times, torquesmat, controller, robot);
 controller.q_target = q0;
 controller.v_target = v0;
 % controller.Compute = @(t,q, v, controller) interp1(times, torquesmat, t);
@@ -111,7 +112,7 @@ function cost = CostFcn(times, robot, q0, v0, pos0, cost_params, torquesvec)
     controller.d = [5 5 5 5]';
     controller.saturation = [3000 3000 3000 3000];
     controller.Compute = @(t,q, v, controller)...
-        PositionController(t, q, v, times, torquesmat, controller);
+        PositionController(t, q, v, times, torquesmat, controller, robot);
 
     % Note that these are only for compliance with the sim
     controller.q_target = q0;
@@ -127,15 +128,15 @@ function cost = CostFcn(times, robot, q0, v0, pos0, cost_params, torquesvec)
     cost = dt*ComputeCost(t, q, qd, pos, cost_params);
 end
 
-function tau = PositionController(t, q, v, times, positions, controller)
+function tau = PositionController(t, q, v, times, positions, controller, robot)
     q_target = interp1(times, positions, t)';
     %q_target = [0.8; 0; 0.6; 0];
     FD_DELTA = 1e-8;
     v_target = (interp1(times, positions, t + FD_DELTA)' - q_target)/FD_DELTA;
     %v_target = [0.; 0; 0.; 0];
 
-    q_error = q_target - q;
-    v_error = v_target - v;
+    q_error = q_target - GetActuatedCoords(q, robot);
+    v_error = v_target - GetActuatedCoords(v, robot);
     
     tau = controller.p.*q_error + controller.d.*v_error;
     for i = 1:length(tau)
