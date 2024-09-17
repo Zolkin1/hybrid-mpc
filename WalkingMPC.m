@@ -1,4 +1,4 @@
-function [t, q, v, pos, torques, qe, ve, pos_e, cost] = WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn)
+function [t, q, v, pos, torques, te, qe, ve, pos_e, cost] = WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn)
 %WALKINGMPC Summary of this function goes here
 %   
 import casadi.*
@@ -7,6 +7,7 @@ t = 0;
 q = 0;
 v = 0;
 torques = 0;
+te = [];
 
 % TODO: Fix
 % uguess = zeros(numinputs, 1);
@@ -33,30 +34,37 @@ lbw = [lbw; x0];
 ubw = [ubw; x0];
 w0 = [w0; x0];
 
+current_foot_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
+
 % Create direct multiple shooting NLP
 count = 1;
 for swing = 1:swing_params.num_swings
     swing_times = linspace(0, swing_params.tf, swing_params.nodes);
     dt = swing_params.tf/swing_params.nodes;
-    for k = 1:swing_params.nodes
-        t_swing = (k-1)*dt;
+    start_node = 1;
+    if swing == 1
+        start_node = floor(swing_params.time_into_swing/dt) + 1;
+    end
+    start_node
+    for k = start_node:swing_params.nodes
+        t_swing = (k)*dt;
         % New NLP variable for the control
-        Uk = MX.sym(['U_' num2str((swing-1)*k)], 4);
+        Uk = MX.sym(['U_' num2str((swing)*k)], robot.nj_act);
         w = {w{:}, Uk};
         lbw = [lbw; -robot.torque_lims];
         ubw = [ubw; robot.torque_lims];
-        w0 = [w0;  ones(robot.nj_act, 1)];
+        w0 = [w0;  zeros(robot.nj_act, 1)];
     
         % Integrate till the end of the interval
         Xk_end = DiscreteDynamics(Xk, Uk, dt, robot);
-        J = J + costfcn(Xk_end, Uk);
+        J = J + costfcn(Xk_end, Uk); % TODO: Add in dt here
 
         % New NLP variable for state at end of interval
-        Xk = MX.sym(['X_' num2str((swing-1)*(k+1))], node_qvp);
+        Xk = MX.sym(['X_' num2str((swing)*(k+1))], node_qvp);
         w = [w, {Xk}];
         lbw = [lbw; -[robot.joint_bounds; robot.joint_vel_bounds; inf; inf]];
         ubw = [ubw; [robot.joint_bounds; robot.joint_vel_bounds; inf; inf]];
-        w0 = [w0; ones(node_qvp, 1)];
+        w0 = [w0; x0];
     
         % Add equality constraint for the shooting nodes
         g = [g, {Xk_end-Xk}];
@@ -64,34 +72,79 @@ for swing = 1:swing_params.num_swings
         ubg = [ubg; zeros(node_qvp,1)];
         
         if (k > 1)
+            des_swing_pos = SwingTrajectory(t_swing, 0, swing_params.tf, current_foot_pos(1), ...
+                swing_params.length, swing_params.apex, 0, 0);
+            if swing == 1
+                des_swing_pos = SwingTrajectory(t_swing, 0, swing_params.tf, ...
+                    swing_params.start_pos(1), swing_params.length, swing_params.apex, swing_params.start_pos(2), 0);
+                
+                % Add equality constraint for the swing foot
+                % fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
+                % g = [g, {fk_pos - des_swing_pos}];
+                % lbg = [lbg; zeros(2,1)];
+                % ubg = [ubg; zeros(2,1)];
+                % 
+                % g = [g, {fk_pos(2) - des_swing_pos(2)}];
+                % lbg = [lbg; zeros(1,1)];
+                % ubg = [ubg; zeros(1,1)];
+            end
+
             % Add equality constraint for the swing foot
             fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
-            des_swing_pos = SwingTrajectory(t_swing, 0, swing_params.tf, 0, swing_params.length, swing_params.apex, 0, 0)
             g = [g, {fk_pos - des_swing_pos}];
             lbg = [lbg; zeros(2,1)];
             ubg = [ubg; zeros(2,1)];
-            %g = [g, {fk_pos(2) - des_swing_pos(2)}];
-            %lbg = [lbg; zeros(1,1)];
-            %ubg = [ubg; zeros(1,1)];
+            % 
+            % g = [g, {fk_pos(2) - des_swing_pos(2)}];
+            % lbg = [lbg; zeros(1,1)];
+            % ubg = [ubg; zeros(1,1)];
+
+            % if k == swing_params.nodes
+            %     g = [g, {fk_pos(2)}];
+            %     lbg = [lbg; zeros(1,1)];
+            %     ubg = [ubg; zeros(1,1)];
+            % end
         end
-        
+
+        if isempty(te)
+            t = [t; t_swing];
+        else
+            t = [t; t_swing + te(end)];
+        end
+
         if k == swing_params.nodes
             % New variable for the result of the impact map
             reset_result = ImpactMap(Xk, robot);
-            Xk2 = MX.sym(['X_impact_' num2str(swing)], node_qvp);
-            w = {w{:}, Xk2};
+            temp = Xk;
+            Xk = MX.sym(['X_impact_' num2str(swing)], node_qvp);
+            w = {w{:}, Xk};
             lbw = [lbw; -inf*ones(node_qvp,1)];
             ubw = [ubw; inf*ones(node_qvp,1)];
-            w0 = [w0; ones(node_qvp, 1)];
+            w0 = [w0; x0];
 
-            g = [g, {Xk2(1:node_qvp-2) - reset_result}];
-            %g = [g, {Xk2(1:node_qvp-2) - Xk(1:node_qvp-2)}];
-            g = [g, {Xk2(robot.nq + robot.nv + 1:end) - Xk(robot.nq + robot.nv + 1:end)}];
+            g = [g, {Xk(1:node_qvp-2) - reset_result}];
+            %g = [g, {Xk(1:node_qvp) - temp(1:node_qvp)}]; 
+            g = [g, {Xk(robot.nq + robot.nv + 1:end) - temp(robot.nq + robot.nv + 1:end)}];
+            %g = [g, {temp(1:node_qvp)}];
             lbg = [lbg; zeros(node_qvp,1)];
             ubg = [ubg; zeros(node_qvp,1)];
-        else 
-            t = [t; t(end) + dt];
+
+            %g = [g, {Xk(1:4) - reset_result(1:4)}];
+            %g = [g, {Xk(1:3) - temp(1:3)}]; 
+            %g = [g, {Xk(5:node_qvp) - temp(5:node_qvp)}]; 
+            %lbg = [lbg; zeros(node_qvp,1)];
+            %ubg = [ubg; zeros(node_qvp,1)];
+
+            current_foot_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
+            if isempty(te)
+                te = [te; t_swing + dt];
+            else
+                te = [te; t_swing + te(end) + dt];
+            end
         end
+
+        length(w)
+        length(w0)
 
         count = count + 1;
     end 
@@ -112,7 +165,6 @@ cost = full(sol.f);
 
 end
 
-% TODO: Check this function
 function [q, v, pos, torques, qe, ve, pos_e] = ExtractValues(w_opt, robot, swing_params)
     q = [];
     v = [];
@@ -123,18 +175,34 @@ function [q, v, pos, torques, qe, ve, pos_e] = ExtractValues(w_opt, robot, swing
     pos_e = [];
 
     idx = 1;
+
+    % Initial condition
+    q = [q, w_opt(idx:(idx-1) + robot.nq)];
+    idx = idx + robot.nq;
+    v = [v, w_opt(idx:(idx-1) + robot.nv)];
+    idx = idx + robot.nv;
+    pos = [pos, w_opt(idx:(idx-1) + 2)];
+    idx = idx + 2;
+
     for swing = 1:swing_params.num_swings
-        for i = 1:swing_params.nodes
+        start_node = 1;
+        if swing == 1
+            dt = swing_params.tf/swing_params.nodes;
+            start_node = floor(swing_params.time_into_swing/dt) + 1;
+        end
+        for i = start_node:swing_params.nodes
+            %if idx < length(w_opt) - 4
+            torques = [torques, w_opt(idx:idx + robot.nj_act)];
+            idx = idx + robot.nj_act;
+            %end
             q = [q, w_opt(idx:(idx-1) + robot.nq)];
+            disp(i)
+            q(:, end)
             idx = idx + robot.nq;
             v = [v, w_opt(idx:(idx-1) + robot.nv)];
             idx = idx + robot.nv;
             pos = [pos, w_opt(idx:(idx-1) + 2)];
             idx = idx + 2;
-            if idx < length(w_opt) - 4
-                torques = [torques, w_opt(idx:idx + robot.nj_act)];
-                idx = idx + robot.nj_act;
-            end
             %idx
         end
         qe = [qe, w_opt(idx:(idx-1) + robot.nq)];
@@ -146,6 +214,8 @@ function [q, v, pos, torques, qe, ve, pos_e] = ExtractValues(w_opt, robot, swing
     end
 
     if idx ~= length(w_opt) + 1
+        length(w_opt)
+        idx
         warning("idx is not at the correct value!");
     end
 end
@@ -166,6 +236,7 @@ function xkp1 = ImpactMap(x, robot)
     [M, C] = HandCCasadi(robot, q, v, {});
     Minv = inv(M);
     vplus = (eye(robot.nq) - Minv*Jeval'*inv(Jeval*Minv*Jeval')*Jeval)*v;
+    %vplus = v;
 
     % Now switch the joints
     % Calculate angle to the ground
@@ -173,9 +244,9 @@ function xkp1 = ImpactMap(x, robot)
     pos_foot = ForwardKinematicsCasadi(robot, x, robot.swing, robot.foot_r);
     pos = pos_joint - pos_foot;
     q(1) = -atan2(pos(1), pos(2)); %-atan(pos(1)/pos(2));
-    q(2) = -q(5);
-    q(3) = -q(4);
-
+    q(2) = -x(5);
+    q(3) = -x(4);
+     
     q(4) = -x(3);
     q(5) = -x(2);
 
@@ -204,12 +275,14 @@ function xkp1 = DiscreteDynamics(x, u, dt, robot)
     pos = ForwardKinematicsCasadi(robot, x, 3, [0;0]);
     J = jacobian(pos, x);
     fkjac = Function('Jacobian', {x}, {J});
+    Jvel = fkjac(x);
+    Jvel = Jvel(:, 1:robot.nq);
 
     %qc = MX.sym('qc', robot.nq);
     %vc = MX.sym('qc', robot.nv);
     a = FDabCasadi(robot, q, v, [0; u]);
     
-    xkp1 = x + dt*[v; a; fkjac(x)*x];
+    xkp1 = x + dt*[v; a; Jvel*v];
 end
 
 function [pos, vel] = ForwardKinematicsCasadi(robot, x, joint, r)
@@ -220,7 +293,7 @@ function [pos, vel] = ForwardKinematicsCasadi(robot, x, joint, r)
 %   frame
 import casadi.*
 
-pos = MX.sym('pos', 2);
+%pos = MX.sym('pos', 2);
 vel = MX.sym('vel', 2);
 
 pos = r;

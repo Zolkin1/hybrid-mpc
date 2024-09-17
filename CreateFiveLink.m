@@ -88,7 +88,7 @@ robot.I{1} = mcI(calf_m, calf_com, calf_I);
 robot.I{4} = mcI(thigh_m, thigh_com, thigh_I);
 robot.I{5} = mcI(calf_m, calf_com, calf_I);
 
-%robot.gravity = [0; -9.81];
+robot.gravity = [0; -9.81];
 
 % ---------- Appearance ---------- %
 robot.appearance.base = ...

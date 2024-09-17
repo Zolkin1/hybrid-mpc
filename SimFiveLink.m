@@ -24,7 +24,8 @@ controller.v_target = v_target;
 controller.p = [3000 3000 3000 3000]'; %[0 60 0 60]';
 controller.d = [120 120 120 120]'; %[0 12 0 12]';
 controller.saturation = [3000 3000 3000 3000];
-controller.Compute = @PDController;
+controller.Compute = @(t, q, v, controller) ...
+    PDController(t, GetActuatedCoords(q, robot), GetActuatedCoords(v, robot), controller);
 
 robot.torso_pos = ForwardKinematics(robot, q0, v0, 3, [0;0]);
 pos0 = robot.torso_pos;

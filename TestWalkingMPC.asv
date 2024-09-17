@@ -5,8 +5,8 @@ clear;
 %%
 robot = CreateFiveLink();
 
-%q0 = [-0.1; 0.1; -0.2; 0.8; -0.1];
-q0 = [-0.1; -0.1; -0.1; 0.1; 0.1];
+q0 = [-0.1; 0.1; -0.2; 0.8; -0.1];
+%q0 = [-0.1; -0.1; -0.1; 0.1; 0.1];
 v0 = zeros(robot.nv, 1);
 robot.torso_pos = ForwardKinematics(robot, q0, v0, 3, [0;0]);
 pos0 = robot.torso_pos;
@@ -15,15 +15,15 @@ swing_params.apex = 0.1;
 swing_params.tf = 0.2;
 swing_params.nodes = 25;
 swing_params.length = 0.3;
-swing_params.num_swings = 4;
+swing_params.num_swings = 2;
 swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foot_r);
-swing_params.time_into_swing = 0.0;
+swing_params.time_into_swing = 0.1;
 
 cost_params.pose_target = q0;
 cost_params.pose_weight = [0, 0, 0, 0, 0]';
 
 cost_params.vel_target = [0, 0, 0, 0, 0]';
-cost_params.vel_weight = [1., 1., 1., 1., 1.]';
+cost_params.vel_weight = [0., 0., 0., 0., 0.]';
 
 cost_params.pos_target = [2, 0.7]';
 cost_params.pos_weight = [100, 200]';
@@ -35,8 +35,7 @@ cost_params.dt = swing_params.tf/swing_params.nodes;
 
 costfcn = @(x, u) ComputeStageCost(x, u, robot, cost_params);
 
-[t, q, v, pos, torques, te, qe, ve, pos_e, cost] = ...
-    WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn);
+[t, q, v, pos, torques, te, qe, ve, pos_e, cost] = WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn);
 
 % te(1) = swing_params.tf;
 % for i = 2:swing_params.num_swings
