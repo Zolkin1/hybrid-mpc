@@ -2,6 +2,15 @@ clc;
 close all;
 clear;
 
+% TODO List:
+% - Make sure it works in the sim with the PD controller
+% - Make it look nicer (tuning or constraints)
+% - Figure out how to warm start/speed up the MPC
+% - See how the MPC does with disturbances
+% - Add in sampling based optimization
+% - Merge the two
+% - Generate all the plots I need (monte carlo sim)
+
 %%
 robot = CreateFiveLink();
 
@@ -11,38 +20,57 @@ v0 = zeros(robot.nv, 1);
 robot.torso_pos = ForwardKinematics(robot, q0, v0, 3, [0;0]);
 pos0 = robot.torso_pos;
 
+t0 = 0;
+
 swing_params.apex = 0.1;
-swing_params.tf = 0.3;
-swing_params.nodes = 40;
-swing_params.length = 0.3;
+swing_params.tf = [0.1; 0.3; 0.3]; %0.3;
+swing_params.nodes = [50; 25; 25];
+swing_params.length = [0.3; 0.3; 0.3];
 swing_params.num_swings = 1;
 swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foot_r);
 swing_params.time_into_swing = 0.0;
-swing_params.use_swing_constraint = false;
+swing_params.no_swing_constraint = 1;
 
-cost_params.pose_target = [-0.1; 1.5; -0.2; 0.8; -0.4];
-cost_params.pose_weight = [100; 100; 100; 100; 100]; %[0, 0, 0, 0, 0]';
+tf = 0.1; %sum(swing_params.tf);
+
+cost_params.pose_target = [-0.1; 1.5; 0.2; 0.8; -0.4];
+%cost_params.pose_weight = [5, 5, 50, 75, 5]';
+cost_params.pose_weight = [1000; 1000; 1000; 1000; 1000];
 
 cost_params.vel_target = [0, 0, 0, 0, 0]';
-cost_params.vel_weight = [5., 5., 5., 5., 5.]';
+cost_params.vel_weight = [50., 50., 50., 50., 100.]';
 
-cost_params.pos_target = [0, 0.75]';
-cost_params.pos_weight = [100, 200]';
+cost_params.pos_target = [2, 0.8]';
+cost_params.pos_weight = [300, 100]';
 
 cost_params.u_target = [0, 0, 0, 0, 0]';
-cost_params.u_weight = [1, 1, 1, 0.1, 0.1]';
+cost_params.u_weight = [5, 5, 5, 5, 10]';
 
-cost_params.dt = swing_params.tf/swing_params.nodes;
+cost_params.dt = swing_params.tf(1)/swing_params.nodes(1);
 cost_params.swing_params = swing_params;
 cost_params.swing_weights = [1, 1]';
 
-cost_params.head_target = [2; 1.4];
-cost_params.head_weight = [0; 100];
+cost_params.head_target = [2; 1.6];
+cost_params.head_weight = [0; 700];
 
-costfcn = @(x, u, t, curr_foot_pos) ComputeStageCost(x, u, t, curr_foot_pos, robot, cost_params);
+costfcn = @(x, u, t, curr_foot_pos, swing_num) ...
+    ComputeStageCost(x, u, t, curr_foot_pos, swing_num, robot, cost_params);
 
-[t, u, q, v, pos, torques, te, qe, ve, pos_e, cost] = ...
-    WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn);
+total_nodes = sum(swing_params.nodes);
+warmstart.q = zeros(robot.nq, total_nodes);
+warmstart.v = zeros(robot.nv, total_nodes);
+warmstart.pos = zeros(2, total_nodes);
+warmstart.tau = zeros(robot.nj_act, total_nodes);
+
+for node = 1:total_nodes
+    warmstart.q(:, node) = q0;
+    warmstart.v(:, node) = v0;
+    warmstart.pos(:, node) = pos0;
+    warmstart.tau(:, node) = zeros(robot.nj_act, 1);
+end
+
+[t, u, q, v, pos, te, qe, ve, pos_e, cost] = ...
+    WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn, warmstart);
 
 % te(1) = swing_params.tf;
 % for i = 2:swing_params.num_swings
@@ -57,6 +85,31 @@ for i = 1:length(t)
     torso_pos(:, i) = ForwardKinematics(robot, q(:, i), v(:, i), 3, [0; 0]);
     head_pos(:, i) = ForwardKinematics(robot, q(:, i), v(:, i), 3, [0; robot.torso_length]);
 end
+
+%% Run the controller on the sim
+% TODO: Fill out the controller
+controller.p = 0*[7000; 7000; 7000; 7000; 7000];
+controller.d = 0*[100; 100; 100; 100; 100];
+controller.saturation = [30000 30000 30000 30000 30000];
+controller.q = q;
+controller.v = v;
+controller.t = t;
+controller.u = u;
+controller.Compute = @(tc, qc, vc, controller) MpcController(tc, qc, vc, controller);
+
+% Only used for compliance
+controller.q_target = 0;
+controller.v_target = 0;
+
+[tsim, qsim, vsim, base_possim, tesim, qesim, vesim, pos_esim] = ...
+    RobotSim(robot, q0, v0, pos0, t0, tf, 100, controller);
+
+
+%% Run MPC in the loop
+MpcFunction = @(q0, v0, pos0, swing_params, warmstart) WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn, warmstart);
+[tmpcsim, qmpcsim, vmpcsim, posmpcsim, tempcsim, qempcsim, vempcsim, pos_empcsim] = ...
+    MpcSim(t0, 2*tf, q0, v0, pos0, tf, swing_params, MpcFunction, controller, robot);
+%% Plots
 
 figure;
 plot(t, foot_pos(1,:));
@@ -95,12 +148,25 @@ legend(["u1", "u2", "u3", "u4", "u5"]);
 xlabel("Time (s)")
 ylabel("Torque")
 
-showmotion(robot, t, q);
+figure;
+plot(t, q);
+hold on;
+plot(tsim, qsim);
+hold off;
+legend(["qt1", "qt2", "qt3", "qt4", "qt5", "qa1", "qa2", "qa3", "qa4", "qa5"])
+xlabel("Time (s)")
+ylabel("Joints")
 
-AnimateRobot(robot, t, q, pos, te, qe, ve, pos_e);
+%showmotion(robot, t, q);
+
+%AnimateRobot(robot, t, q, pos, te, qe, ve, pos_e);
+
+%AnimateRobot(robot, tsim, qsim, base_possim, tesim, qesim, vesim, pos_esim);
+
+AnimateRobot(robot, tmpcsim, qmpcsim, posmpcsim, tempcsim, qempcsim, vempcsim, pos_empcsim);
 
 %% Cost function
-function cost = ComputeStageCost(x, u, t, curr_foot_pos, robot, params)
+function cost = ComputeStageCost(x, u, t, curr_foot_pos, swing_num, robot, params)
     import casadi.*
     cost = PositionTracking(x(robot.nq + robot.nv + 1: end),...
         params.pos_target, params.pos_weight);
@@ -113,7 +179,7 @@ function cost = ComputeStageCost(x, u, t, curr_foot_pos, robot, params)
 
     cost = cost + TorqueReg(u, params.u_target, params.u_weight);
 
-    cost = cost + FootTracking(x, t, curr_foot_pos, params.swing_params, params.swing_weights, robot);
+    cost = cost + FootTracking(x, t, curr_foot_pos, swing_num, params.swing_params, params.swing_weights, robot);
 
     cost = cost + HeadTracking(x, params.head_target, params.head_weight, robot);
 
@@ -136,14 +202,24 @@ function cost = TorqueReg(u, u_target, u_weight)
     cost = dot(u_weight.*(u - u_target), u_weight.*(u - u_target));
 end
 
-function cost = FootTracking(x, t, curr_foot_pos, params, weights, robot)
+function cost = FootTracking(x, t, curr_foot_pos, swing_num, params, weights, robot)
     fk_pos = ForwardKinematicsCasadi(robot, x, robot.swing, robot.foot_r);
-    des_swing_pos = SwingTrajectory(t, 0, params.tf, curr_foot_pos(1), ...
-                params.length, params.apex, 0, 0);
+    des_swing_pos = SwingTrajectory(t, 0, params.tf(swing_num), curr_foot_pos(1), ...
+                params.length(swing_num), params.apex, 0, 0);
     cost = dot(weights.*(fk_pos - des_swing_pos), weights.*(fk_pos - des_swing_pos));
 end
 
 function cost = HeadTracking(x, target, weight, robot)
     fk_pos = ForwardKinematicsCasadi(robot, x, 3, [0; robot.torso_length]);
     cost = dot(weight.*(fk_pos - target), weight.*(fk_pos - target));
+end
+
+function tau = MpcController(tc, qc, vc, controller)
+    uff = interp1(controller.t(1:end-1), controller.u', tc, "me")';
+    controller.q_target = interp1(controller.t, controller.q', tc)';
+    controller.v_target = interp1(controller.t, controller.v', tc)';
+
+    controller.feed_forward = uff; % zeros(length(uff), 1);
+
+    tau = PDController(tc, qc, vc, controller);
 end

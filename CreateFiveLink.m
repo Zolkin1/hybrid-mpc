@@ -141,10 +141,10 @@ robot.swing = robot.leg_2;
 
 robot.foot_r = [0;-0.4];
 
-robot.torque_lims = [100; 100; 100; 100; 100]; %[100; 100; 100; 100];
+robot.torque_lims = 6*[100; 100; 100; 100; 100]; %[100; 100; 100; 100];
 robot.joint_bounds_upper = [2*pi; 2*pi; 2*pi; 2*pi; 2*pi];
 robot.joint_bounds_lower = [-2*pi; -2*pi; -2*pi; -2*pi; -2*pi];
-robot.joint_vel_bounds = [1.5; 1.5; 1.5; 1.5; 1.5];
+robot.joint_vel_bounds = 10*[3.5; 3.5; 3.5; 3.5; 3.5];
 % ---------- Global position ---------- %
 robot.torso_pos = [0;0];
 robot.torso_vel = [0;0];
