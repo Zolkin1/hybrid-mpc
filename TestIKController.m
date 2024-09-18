@@ -55,9 +55,9 @@ end
 controller.q_target = zeros(2,1);
 controller.v_target = zeros(2,1);
 
-controller.p = [1000 1000 1000 1000]';
-controller.d = [120 120 120 120]';
-controller.saturation = [3000 3000 3000 3000];
+controller.p = [1000 1000 1000 1000 1000]';
+controller.d = [120 120 120 120 120]';
+controller.saturation = [3000 3000 3000 3000 3000];
 controller.des_pos = [0.4; 0.4];
 
 % controller.q_target = InverseKinematicsRobot(robot, robot.swing, robot.foot_r, q0, controller.des_pos);

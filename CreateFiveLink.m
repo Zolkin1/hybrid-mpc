@@ -129,8 +129,8 @@ robot.link{4} = [0; -robot.calf_length];
 robot.link{5} = [0; -robot.calf_length];
 
 % ---------- Other constants ---------- %
-robot.nj_act = 4;
-robot.act_coords = [2 3 4 5];
+robot.nj_act = 5; %4;
+robot.act_coords = [1 2 3 4 5]; %[2 3 4 5];
 robot.nq = 5;
 robot.nv = 5;
 
@@ -141,9 +141,10 @@ robot.swing = robot.leg_2;
 
 robot.foot_r = [0;-0.4];
 
-robot.torque_lims = [100; 100; 100; 100];
-robot.joint_bounds = [2*pi; 2*pi; 2*pi; 2*pi; 2*pi];
-robot.joint_vel_bounds = [100; 100; 100; 100; 100];
+robot.torque_lims = [100; 100; 100; 100; 100]; %[100; 100; 100; 100];
+robot.joint_bounds_upper = [2*pi; 2*pi; 2*pi; 2*pi; 2*pi];
+robot.joint_bounds_lower = [-2*pi; -2*pi; -2*pi; -2*pi; -2*pi];
+robot.joint_vel_bounds = [1.5; 1.5; 1.5; 1.5; 1.5];
 % ---------- Global position ---------- %
 robot.torso_pos = [0;0];
 robot.torso_vel = [0;0];

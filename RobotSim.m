@@ -169,7 +169,7 @@ function dydt = odefun(t, y, robot, controller)
     tau_act = controller.Compute(t, q, v, controller);
 
     dydt(robot.nv + 1: 2*robot.nv) = ...
-        FDab(robot, q, v, [0, tau_act(1), tau_act(2), tau_act(3), tau_act(4)]);
+        FDab(robot, q, v, tau_act);
 
     J = BodyJacobianFD(robot, q, 3, [0;0]);
     dydt(2*robot.nv+1:end) = J*v;

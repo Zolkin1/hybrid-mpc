@@ -96,9 +96,9 @@ function controller = CreateController(robot, q0, samplevec)
     controller.q_target = zeros(2,1);
     controller.v_target = zeros(2,1);
     
-    controller.p = [1000 1000 1000 1000]';
-    controller.d = [120 120 120 120]';
-    controller.saturation = [3000 3000 3000 3000];
+    controller.p = [1000 1000 1000 1000, 1000]';
+    controller.d = [120 120 120 120, 120]';
+    controller.saturation = [3000 3000 3000 3000, 3000];
     controller.des_pos = [0.4; 0.4];
 
     controller.Compute = @(t, q, v, controller) ComputeIKControl(t, q, v, controller, robot);
