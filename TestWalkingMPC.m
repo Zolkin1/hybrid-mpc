@@ -107,13 +107,22 @@ controller.v_target = 0;
 %     RobotSim(robot, q0, v0, pos0, t0, tf, 100, controller);
 
 %% Short Horizon MPC
+short_swing_params.apex = 0.1;
+short_swing_params.tf = [0.3];
+short_swing_params.nodes = [30];
+short_swing_params.length = [0.3];
+short_swing_params.num_swings = 1;
+short_swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foot_r);
+short_swing_params.time_into_swing = 0.0;
+short_swing_params.no_swing_constraint = 1;
 
 %% Run MPC in the loop
-% mpc_dt = 0.3;
-% 
-% MpcFunction = @(q0, v0, pos0, swing_params, warmstart) WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn, warmstart);
-% [tmpcsim, qmpcsim, vmpcsim, posmpcsim, tempcsim, qempcsim, vempcsim, pos_empcsim] = ...
-%     MpcSim(t0, tf, q0, v0, pos0, mpc_dt, swing_params, MpcFunction, controller, robot);
+mpc_dt = 0.25;
+mpc_sim_tf = 0.5;
+
+MpcFunction = @(q0, v0, pos0, swing_params, warmstart) WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn, warmstart);
+[tmpcsim, qmpcsim, vmpcsim, posmpcsim, tempcsim, qempcsim, vempcsim, pos_empcsim] = ...
+    MpcSim(t0, mpc_sim_tf, q0, v0, pos0, mpc_dt, short_swing_params, MpcFunction, controller, robot);
 %% Plots
 
 figure;

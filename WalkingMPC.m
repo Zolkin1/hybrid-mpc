@@ -113,7 +113,7 @@ for swing = 1:swing_params.num_swings
         elseif k > 1
             fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
             g = [g, {fk_pos(2)}];
-            lbg = [lbg; zeros(1,1)];
+            lbg = [lbg; 0.02*ones(1,1)];
             ubg = [ubg; inf*ones(1,1)];
         end
 

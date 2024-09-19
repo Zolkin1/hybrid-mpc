@@ -54,7 +54,7 @@ for i = 1:num_mpc_solves
     controller.u = umpc;
 
     % Simulate
-    [sol, in_contact] = Simulate(t0, t0+min(mpc_dt, tf-t0), q0, v0, pos0, robot, controller);
+    [sol, in_contact] = Simulate(t0, t0+mpc_dt, q0, v0, pos0, robot, controller);
     % [tsim, qsim, vsim, base_possim, tesim, qesim, vesim, pos_esim] = ...
     %     RobotSim(robot, q0, v0, pos0, t0, t0 + mpc_dt, tdensity, controller);
 
@@ -91,7 +91,7 @@ for i = 1:num_mpc_solves
     % Plot
     qsim = sol.y(1:robot.nq, :);
     for i = 1:robot.nq
-        nexttile(3*i - 2);
+        nexttile(2*i - 1);
         hold on;
         plot(sol.x, qsim(i, :));
         plot(tmpc + t0, qmpc(i, :), "LineStyle","--");
@@ -100,17 +100,10 @@ for i = 1:num_mpc_solves
 
     vsim = sol.y(robot.nq + 1:robot.nq + robot.nv, :);
     for i = 1:robot.nv
-        nexttile(3*i - 1);
+        nexttile(3*i);
         hold on;
         plot(sol.x, vsim(i, :));
         plot(tmpc + t0, vmpc(i, :), "LineStyle","--");
-        hold off;
-    end
-
-    for i = 1:robot.nj_act
-        nexttile(3*i);
-        hold on;
-        plot(tmpc(1:end-1) + t0, umpc(i, :), "LineStyle","--");
         hold off;
     end
     pause;
