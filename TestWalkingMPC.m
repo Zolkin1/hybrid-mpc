@@ -114,10 +114,10 @@ short_swing_params.length = [0.3];
 short_swing_params.num_swings = 1;
 short_swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foot_r);
 short_swing_params.time_into_swing = 0.0;
-short_swing_params.no_swing_constraint = 1;
+short_swing_params.no_swing_constraint = 2;
 
 %% Run MPC in the loop
-mpc_dt = 0.25;
+mpc_dt = 0.1;
 mpc_sim_tf = 0.5;
 
 MpcFunction = @(q0, v0, pos0, swing_params, warmstart) WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn, warmstart);

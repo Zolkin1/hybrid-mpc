@@ -34,6 +34,8 @@ pos = zeros(2, length(t));
 figure;
 tiledlayout(5, 3);
 
+num_contacts = 0;
+
 for i = 1:num_mpc_solves
     swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foot_r);
 
@@ -42,10 +44,10 @@ for i = 1:num_mpc_solves
         MpcFunction(q0, v0, pos0, swing_params, warmstart);
 
     % Update warmstart
-    warmstart.q = qmpc;
-    warmstart.v = vmpc;
-    warmstart.pos = posmpc;
-    warmstart.tau = umpc;
+    % warmstart.q = qmpc;
+    % warmstart.v = vmpc;
+    % warmstart.pos = posmpc;
+    % warmstart.tau = umpc;
 
     % Update Controller
     controller.q = qmpc;
@@ -58,6 +60,9 @@ for i = 1:num_mpc_solves
     % [tsim, qsim, vsim, base_possim, tesim, qesim, vesim, pos_esim] = ...
     %     RobotSim(robot, q0, v0, pos0, t0, t0 + mpc_dt, tdensity, controller);
 
+    in_contact
+    sol.x(end)
+
     % Record all the data into the associated structs
     while time_idx <= length(t) && t(time_idx) <= sol.x(end)
         y = deval(sol, t(time_idx));
@@ -69,11 +74,13 @@ for i = 1:num_mpc_solves
         q0 = q(:, time_idx - 1);
         v0 = v(:, time_idx - 1);
         pos0 = pos(:, time_idx - 1);
+
+        swing_params.start_pos = ForwardKinematics(robot, q(:,end), v(:,end), robot.swing, robot.foot_r);
     end
 
     if in_contact
         % Apply the reset map
-        ye = GroundContact(sol.x(end), sol.y(end));
+        [stop, ye] = ContactResponse(sol.y(:, end), robot);
 
         te = [te; sol.x(end)];
         qe = [qe, ye(1:robot.nq)];
@@ -82,19 +89,44 @@ for i = 1:num_mpc_solves
 
         q0 = qe(:, end);
         v0 = ve(:, end);
-        pos0 = pose(:, end);
+        pos0 = pos_e(:, end);
 
         global last_contact_time;
         last_contact_time = te(end);
+
+        % Replan with the hybrid MPC
+
+
+        num_contacts = num_contacts + 1;
+        % Adjust short term MPC targets
+        if num_contacts == 2
+        swing_params.no_swing_constraint = 1;
+        end
+        swing_params.start_pos = ForwardKinematics(robot, qe(:,end), ve(:,end), robot.swing, robot.foot_r);
     end
 
+    if ~isempty(te)
+        swing_params.time_into_swing = sol.x(end) - te(end);
+    else
+        swing_params.time_into_swing = sol.x(end);
+        if swing_params.time_into_swing >= swing_params.tf(1)
+            swing_params.time_into_swing = swing_params.tf(1) - 0.02;
+        end
+    end
+
+
     % Plot
+    t_offset = t0;
+    if length(te) > 1
+        t_offset = te(end - 1);
+    end
+
     qsim = sol.y(1:robot.nq, :);
     for i = 1:robot.nq
         nexttile(3*i - 2);
         hold on;
         plot(sol.x, qsim(i, :));
-        plot(tmpc + t0, qmpc(i, :), "LineStyle","--");
+        plot(tmpc + t_offset, qmpc(i, :), "LineStyle","--");
         hold off;
     end
 
@@ -103,21 +135,21 @@ for i = 1:num_mpc_solves
         nexttile(3*i - 1);
         hold on;
         plot(sol.x, vsim(i, :));
-        plot(tmpc + t0, vmpc(i, :), "LineStyle","--");
+        plot(tmpc + t_offset, vmpc(i, :), "LineStyle","--");
         hold off;
     end
 
     for i = 1:robot.nj_act
         nexttile(3*i);
         hold on;
-        plot(tmpc(1:end-1) + t0, umpc(i, :), "LineStyle","--");
+        plot(tmpc(1:end-1) + t_offset, umpc(i, :), "LineStyle","--");
         hold off;
     end
-    pause;
+    %pause;
 
 
     % Update other variables
-    t0 = t0 + mpc_dt;
+    t0 = sol.x(end);
 end
 
 
@@ -144,8 +176,8 @@ function [height, isterminal, direction] = GroundContact(t, y, robot)
     v = y(robot.nq + 1: robot.nq + robot.nv);
     [pos, vel] = ForwardKinematics(robot, q, v, robot.swing, [0;-robot.calf_length]);
     
-    if abs(t - last_contact_time) < 1e-1
-        height = 0.05;
+    if abs(t - last_contact_time) < 1e-2
+       height = 0.05;
     else
         height = pos(2);
     end
@@ -153,7 +185,7 @@ function [height, isterminal, direction] = GroundContact(t, y, robot)
     direction = -1;
 end
 
-function [stop, y, robot, controller] = ContactResponse(y, robot, controller)
+function [stop, y] = ContactResponse(y, robot)
     q = y(1:robot.nq);
     v = y(robot.nq+1:robot.nq+robot.nv);
 
@@ -184,10 +216,6 @@ function [stop, y, robot, controller] = ContactResponse(y, robot, controller)
     vplus(3) = -vplus(4);
     vplus(4) = -vplus_temp(3);
     vplus(5) = -vplus_temp(2);
-
-    % Update the controller
-    controller.q_target = -controller.q_target;
-    controller.v_target = -controller.v_target;
 
     % Assign to y
     y(1:robot.nq) = q;

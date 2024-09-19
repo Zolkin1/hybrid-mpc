@@ -3,7 +3,7 @@ function [t, u, q, v, pos, te, qe, ve, pos_e, cost] = WalkingMPC(robot, q0, v0, 
 %   
 import casadi.*
 
-t = 0;
+t = 0; %swing_params.time_into_swing;
 q = 0;
 v = 0;
 torques = 0;
@@ -43,12 +43,9 @@ for swing = 1:swing_params.num_swings
     swing_times = linspace(0, swing_params.tf(swing), swing_params.nodes(swing));
     dt = swing_params.tf(swing)/swing_params.nodes(swing);
     start_node = 1;
-    if swing == 1
-        start_node = floor(swing_params.time_into_swing/dt) + 1;
-    end
     start_node
     for k = start_node:swing_params.nodes(swing)
-        t_swing = (k)*dt;
+        t_swing = (k)*dt + swing_params.time_into_swing;
         % New NLP variable for the control
         Uk = MX.sym(['U_' num2str(var_idx)], robot.nj_act);
         var_idx = var_idx + 1;
@@ -59,7 +56,7 @@ for swing = 1:swing_params.num_swings
     
         % Integrate till the end of the interval
         Xk_end = DiscreteDynamics(Xk, Uk, dt, robot);
-        J = J + costfcn(Xk_end, Uk, t_swing, current_foot_pos, swing); % TODO: Add in dt here
+        J = J + costfcn(Xk_end, Uk, t_swing, dt); % TODO: Add in dt here
 
         % New NLP variable for state at end of interval
         Xk = MX.sym(['X_' num2str(var_idx)], node_qvp);
@@ -79,10 +76,10 @@ for swing = 1:swing_params.num_swings
         
         if (k > 2 && swing ~= swing_params.no_swing_constraint)
             des_swing_pos = SwingTrajectory(t_swing, 0, swing_params.tf(swing), current_foot_pos(1), ...
-                swing_params.length(swing), swing_params.apex, 0, 0);
+                swing_params.length(swing), swing_params.apex, 0, -0.01);
             if swing == 1
                 des_swing_pos = SwingTrajectory(t_swing, 0, swing_params.tf(swing), ...
-                    swing_params.start_pos(1), swing_params.length(swing), swing_params.apex, swing_params.start_pos(2), 0);
+                    swing_params.start_pos(1), swing_params.length(swing), swing_params.apex, swing_params.start_pos(2), -0.01);
                 
                 % Add equality constraint for the swing foot
                 % fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
@@ -118,9 +115,9 @@ for swing = 1:swing_params.num_swings
         end
 
         if isempty(te)
-            t = [t; t_swing];
+            t = [t; k*dt];
         else
-            t = [t; t_swing + te(end)];
+            t = [t; k*dt + te(end)];
         end
 
         if k == swing_params.nodes(swing)
@@ -149,9 +146,9 @@ for swing = 1:swing_params.num_swings
 
             current_foot_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
             if isempty(te)
-                te = [te; t_swing + dt];
+                te = [te; k*dt + dt];
             else
-                te = [te; t_swing + te(end) + dt];
+                te = [te; k*dt + te(end) + dt];
             end
         end
 
@@ -197,10 +194,6 @@ function [q, v, pos, torques, qe, ve, pos_e] = ExtractValues(w_opt, robot, swing
 
     for swing = 1:swing_params.num_swings
         start_node = 1;
-        if swing == 1
-            dt = swing_params.tf(swing)/swing_params.nodes(swing);
-            start_node = floor(swing_params.time_into_swing/dt) + 1;
-        end
         for i = start_node:swing_params.nodes(swing)
             %if idx < length(w_opt) - 4
             torques = [torques, w_opt(idx:(idx-1) + robot.nj_act)];
