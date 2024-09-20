@@ -12,7 +12,7 @@ for n = 1:cem_settings.max_iters
     n
     ysample = zeros(nsamples, 1);
     xsample = zeros(xsize, nsamples);
-    parfor j = 1:nsamples
+    for j = 1:nsamples
         % Sample
         xsample(:,j) = mvnrnd(xmean', xvar, 1)'; %randn(xsize,1).*sqrt(xvar) + xmean;
         

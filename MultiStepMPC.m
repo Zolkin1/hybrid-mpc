@@ -1,5 +1,5 @@
-function [t, u, q, v, pos, te, qe, ve, pos_e, cost] = WalkingMPC(robot, q0, v0, pos0, swing_params, costfcn, warm_start)
-%WALKINGMPC MPC for a single swing phase
+function mpc_sol = MultiStepMPC(robot, q0, v0, pos0, swing_params, costfcn, warm_start)
+%MULTISTEPMPC
 %   
 import casadi.*
 
@@ -8,10 +8,6 @@ q = 0;
 v = 0;
 torques = 0;
 te = [];
-
-% TODO: Fix
-% uguess = zeros(numinputs, 1);
-% xguess = zeros(numstates, 1);
 
 % Start with an empty NLP
 w={};       % decision variables
@@ -40,16 +36,23 @@ current_foot_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r)
 count = 1;
 var_idx = 1;
 ws_node_idx = 1;
-
-if swing_params.num_swings ~= 1
-    error("Number of swing must be 1 for the short horizon mpc!");
-end
-
 for swing = 1:swing_params.num_swings
-    swing_times = linspace(0, swing_params.tf(swing), swing_params.nodes(swing));
-    dt = swing_params.tf(swing)/swing_params.nodes(swing);
+    % Swing parameter variables
+    swing_tf = MX.sym(['SwingTf_' num2str(swing)], 1);
+    w = {w{:}, swing_tf};
+    lbw = [lbw; 0.1];
+    ubw = [ubw; 0.5];
+    w0 = [w0;  0.3];
+
+    swing_xpos = MX.sym(['SwingLength_' num2str(swing)], 1);
+    w = {w{:}, swing_xpos};
+    lbw = [lbw; -0.5];
+    ubw = [ubw; 0.5];
+    w0 = [w0;  0.3];
+
+    swing_times = linspace(0, swing_tf, swing_params.nodes(swing));
+    dt = swing_tf/swing_params.nodes(swing);
     start_node = 1;
-    start_node
     for k = start_node:swing_params.nodes(swing)
         t_swing = (k)*dt + swing_params.time_into_swing;
         % New NLP variable for the control
@@ -82,12 +85,8 @@ for swing = 1:swing_params.num_swings
         
         % ---------- Swing Height ---------- %
         if (k > 2 && swing ~= swing_params.no_swing_constraint)
-            des_swing_pos = SwingTrajectory(t_swing, 0, swing_params.tf(swing), current_foot_pos(1), ...
-                swing_params.length(swing), swing_params.apex, 0, swing_params.final_height);
-            if swing == 1
-                des_swing_pos = SwingTrajectory(t_swing, 0, swing_params.tf(swing), ...
-                    swing_params.start_pos(1), swing_params.length(swing), swing_params.apex, swing_params.start_pos(2), swing_params.final_height);
-            end
+            des_swing_pos = SwingTrajectoryCasadi(t_swing, k, swing_params.nodes(swing), 0, swing_tf, current_foot_pos(1), ...
+                swing_xpos, swing_params.apex, 0, swing_params.final_height);
 
             % Add equality constraint for the swing foot
             fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
@@ -103,12 +102,12 @@ for swing = 1:swing_params.num_swings
 
         % ---------- Joint Position Constraints ---------- %
         % Keep the knee some amount above the the ground
-        swing_knee_pos = ForwardKinematicsCasadi(robot, Xk, 4, [0; -robot.thigh_length]);
+        swing_knee_pos = ForwardKinematicsCasadi(robot, Xk, 4, [0; 0]);
         g = [g, {swing_knee_pos(2)}];
         lbg = [lbg; robot.calf_length/2];
         ubg = [ubg; inf*ones(1,1)];
 
-        stance_knee_pos = ForwardKinematicsCasadi(robot, Xk, 4, [0; robot.calf_length]);
+        stance_knee_pos = ForwardKinematicsCasadi(robot, Xk, 2, [0; 0]);
         g = [g, {stance_knee_pos(2)}];
         lbg = [lbg; robot.calf_length/2];
         ubg = [ubg; inf*ones(1,1)];
@@ -120,30 +119,23 @@ for swing = 1:swing_params.num_swings
             t = [t; k*dt + te(end)];
         end
 
-        % ---------- Terminal Constraint ---------- %
+        % ---------- Impact Map ---------- %
         if k == swing_params.nodes(swing)
             % New variable for the result of the impact map
-            % reset_result = ImpactMap(Xk, robot);
-            % temp = Xk;
-            % Xk = MX.sym(['X_impact_' num2str(var_idx)], node_qvp);
-            % var_idx = var_idx + 1;
-            % w = {w{:}, Xk};
-            % lbw = [lbw; -inf*ones(node_qvp,1)];
-            % ubw = [ubw; inf*ones(node_qvp,1)];
-            % w0 = [w0; [warm_start.q(:, ws_node_idx);...
-            %     warm_start.v(:, ws_node_idx); warm_start.pos(:, ws_node_idx)]];
-            % 
-            % g = [g, {Xk(1:node_qvp-2) - reset_result}];
-            % g = [g, {Xk(robot.nq + robot.nv + 1:end) - temp(robot.nq + robot.nv + 1:end)}];
-            % lbg = [lbg; zeros(node_qvp,1)];
-            % ubg = [ubg; zeros(node_qvp,1)];
+            reset_result = ImpactMap(Xk, robot);
+            temp = Xk;
+            Xk = MX.sym(['X_impact_' num2str(var_idx)], node_qvp);
+            var_idx = var_idx + 1;
+            w = {w{:}, Xk};
+            lbw = [lbw; -inf*ones(node_qvp,1)];
+            ubw = [ubw; inf*ones(node_qvp,1)];
+            w0 = [w0; [warm_start.q(:, ws_node_idx);...
+                warm_start.v(:, ws_node_idx); warm_start.pos(:, ws_node_idx)]];
 
-            % ---------- Terminal Constraint ---------- %
-            if swing ~= swing_params.no_swing_constraint
-                g = [g, {Xk - swing_params.terminal_constraint}];
-                lbg = [lbg; zeros(node_qvp, 1)];
-                ubg = [ubg; zeros(node_qvp, 1)];
-            end
+            g = [g, {Xk(1:node_qvp-2) - reset_result}];
+            g = [g, {Xk(robot.nq + robot.nv + 1:end) - temp(robot.nq + robot.nv + 1:end)}];
+            lbg = [lbg; zeros(node_qvp,1)];
+            ubg = [ubg; zeros(node_qvp,1)];
 
             current_foot_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
             if isempty(te)
@@ -167,11 +159,47 @@ sol = solver('x0', w0, 'lbx', lbw, 'ubx', ubw,...
 w_opt = full(sol.x);
 cost = full(sol.f);
 
-[q, v, pos, u, qe, ve, pos_e] = ExtractValues(w_opt, robot, swing_params);
+[q, v, pos, u, qe, ve, pos_e, swing_tfs, swing_xpos] = ExtractValues(w_opt, robot, swing_params);
+
+mpc_sol.q = q;
+mpc_sol.v = v;
+mpc_sol.pos = pos;
+mpc_sol.u = u;
+mpc_sol.qe = qe;
+mpc_sol.ve = ve;
+mpc_sol.pos_e = pos_e;
+mpc_sol.cost = cost;
+mpc_sol.swing_tf = swing_tfs;
+mpc_sol.swing_xpos = swing_xpos;
+
+t = 0;
+te = [];
+for swing = 1:swing_params.num_swings
+    dt = mpc_sol.swing_tf(swing)/swing_params.nodes(swing);
+    for k = 1:swing_params.nodes(swing)
+        if isempty(te)
+            t = [t; k*dt];
+        else
+            t = [t; k*dt + te(end)];
+        end
+
+        if k == swing_params.nodes(swing)
+            if isempty(te)
+                te = [te; k*dt + dt];
+            else
+                te = [te; k*dt + te(end) + dt];
+            end
+        end
+    end
+end
+
+mpc_sol.t = t;
+mpc_sol.te = te;
 
 end
 
-function [q, v, pos, torques, qe, ve, pos_e] = ExtractValues(w_opt, robot, swing_params)
+function [q, v, pos, torques, qe, ve, pos_e, swing_tfs, swing_xpos] =...
+    ExtractValues(w_opt, robot, swing_params)
     q = [];
     v = [];
     pos = [];
@@ -179,6 +207,8 @@ function [q, v, pos, torques, qe, ve, pos_e] = ExtractValues(w_opt, robot, swing
     qe = [];
     ve = [];
     pos_e = [];
+    swing_tfs = zeros(swing_params.num_swings, 1);
+    swing_xpos = zeros(swing_params.num_swings, 1);
 
     idx = 1;
 
@@ -191,6 +221,12 @@ function [q, v, pos, torques, qe, ve, pos_e] = ExtractValues(w_opt, robot, swing
     idx = idx + 2;
 
     for swing = 1:swing_params.num_swings
+        swing_tfs(swing) = w_opt(idx);
+        idx = idx + 1;
+
+        swing_xpos(swing) = w_opt(idx);
+        idx = idx + 1;
+
         start_node = 1;
         for i = start_node:swing_params.nodes(swing)
             %if idx < length(w_opt) - 4

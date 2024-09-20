@@ -74,11 +74,11 @@ short_swing_params.final_height = 0;
 
 % Cost Parameters
 short_cost_params.pose_target = [-0.1; 0; 0.2; 0.8; -0.4];
-short_cost_params.q_weight = [500, 500, 500, 500, 500]';
+short_cost_params.pose_weight = [500, 500, 500, 500, 500]';
 %cost_params.pose_weight = [1000; 1000; 1000; 1000; 1000];
 
 short_cost_params.vel_target = [0, 0, 0, 0, 0]';
-short_cost_params.v_weight = [500., 500., 500., 500., 500.]';
+short_cost_params.vel_weight = [500., 500., 500., 500., 500.]';
 
 short_cost_params.pos_target = [1, 0.8]';
 short_cost_params.pos_weight = [300, 1000]';
@@ -142,4 +142,31 @@ function tau = MpcController(tc, qc, vc, controller)
     tau = PDController(tc, qc, vc, controller);
 end
 
+%% Short Cost Function
+function cost = StageTrackingCost(t, x, u)
+    cost = 0;
+    q = x(1:robot.nq);
+    v = x(robot.nq + 1: robot.nq + robot.nv);
+    
+    cost = cost + qTracking(t, q);
+    cost = cost + vTracking(t, v);
+    cost = cost + uTracking(t, u);
+    cost = cost + posTracking(t, pos);
+end
+
+function cost = qTracking(q, target, weight)
+    cost = dot(weight.*(q - target), weight.*(q - target));
+end
+
+function cost = vTracking(v, target, weight)
+    cost = dot(weight.*(v - target), weight.*(v - target));
+end
+
+function cost = uTracking(u, target, weight)
+    cost = dot(weight.*(u - target), weight.*(u - target));
+end
+
+function cost = posTracking(pos, target, weight)
+    cost = dot(weight.*(pos - target), weight.*(pos - target));
+end
 

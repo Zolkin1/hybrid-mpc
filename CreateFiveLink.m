@@ -70,15 +70,15 @@ robot.Xtree{5} = plnr(0, calf_in_thigh_r);
 % ---------- Inertias ---------- %
 % TODO: Check
 % Values from: https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=1013706
-torso_m = 20;
+torso_m = 10; %20;
 torso_com = [0; 0.2];
 torso_I = 2.22;
 
-thigh_m = 6.8;
+thigh_m = 3; %6.8;
 thigh_com = [0; -0.163];
 thigh_I = 1.08;
 
-calf_m = 3.2;
+calf_m = 1; %3.2;
 calf_com = [0; -0.128];
 calf_I = 0.93;
 
@@ -139,9 +139,9 @@ robot.leg_2 = 5;
 robot.stance = robot.leg_1;
 robot.swing = robot.leg_2;
 
-robot.foot_r = [0;-0.4];
+robot.foot_r = [0;-robot.calf_length];
 
-robot.torque_lims = 6*[100; 100; 100; 100; 100]; %[100; 100; 100; 100];
+robot.torque_lims = 10*2*[300; 300; 300; 300; 300]; %[100; 100; 100; 100];
 robot.joint_bounds_upper = [2*pi; 2*pi; 2*pi; 2*pi; 2*pi];
 robot.joint_bounds_lower = [-2*pi; -2*pi; -2*pi; -2*pi; -2*pi];
 robot.joint_vel_bounds = 10*[3.5; 3.5; 3.5; 3.5; 3.5];

@@ -1,27 +1,17 @@
-function [t, q, v, pos, te, qe, ve, pos_e] = MpcSim(t0, tf, q0, v0, pos0, mpc_dt, swing_params, MpcFunction, controller, robot)
+function sim_sol = MpcSim(t0, tf, q0, v0, pos0, mpc_dt, short_mpc, long_mpc, controller, robot)
 %MPCSIM Simulation with MPC in the loop
 %  
 
 
-num_mpc_solves = ceil((tf - t0)/mpc_dt);
+%num_mpc_solves = ceil((tf - t0)/mpc_dt);
 
 te = [];
 qe = [];
 ve = [];
 pos_e = [];
 
-total_nodes = sum(swing_params.nodes);
-warmstart.q = zeros(robot.nq, total_nodes);
-warmstart.v = zeros(robot.nv, total_nodes);
-warmstart.pos = zeros(2, total_nodes);
-warmstart.tau = zeros(robot.nj_act, total_nodes);
-
-for node = 1:total_nodes
-    warmstart.q(:, node) = q0;
-    warmstart.v(:, node) = v0;
-    warmstart.pos(:, node) = pos0;
-    warmstart.tau(:, node) = zeros(robot.nj_act, 1);
-end
+short_warmstart = MakeBasicWarmstart(q0, v0, pos0, sum(short_mpc.swing_params.nodes), robot);
+long_warmstart = MakeBasicWarmstart(q0, v0, pos0, sum(long_mpc.swing_params.nodes), robot);
 
 dt_record = 0.01;
 
@@ -31,15 +21,38 @@ q = zeros(robot.nq, length(t));
 v = zeros(robot.nv, length(t));
 pos = zeros(2, length(t));
 
-figure;
+tracking = figure;
 tiledlayout(5, 3);
 
-for i = 1:num_mpc_solves
-    swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foot_r);
+impacts = figure;
+tiledlayout(5, 3);
+
+num_contacts = 0;
+
+short_mpc.swing_params.no_swing_constraint = 2;
+
+% Initial high level MPC solve
+long_mpc_sol = long_mpc.mpc(q0, v0, pos0, long_mpc.swing_params, long_warmstart, long_mpc.cost_fcn);
+AnimateRobot(robot, long_mpc_sol.t, long_mpc_sol.q, long_mpc_sol.pos, long_mpc_sol.te, long_mpc_sol.qe, long_mpc_sol.ve, long_mpc_sol.pos_e);
+
+short_mpc.swing_params.terminal_constraint = UpdateTerminalConstraint(long_mpc_sol, 1);
+short_mpc.swing_params.terminal_constraint
+short_mpc.cost_params.pose_target = short_mpc.swing_params.terminal_constraint(1:robot.nq);
+short_mpc.cost_params.vel_target = short_mpc.swing_params.terminal_constraint(robot.nq + 1:robot.nq + robot.nv);
+short_mpc.cost_params.pos_target = short_mpc.swing_params.terminal_constraint(11:end);
+short_mpc.cost_fcn = @(x, u, t, dt, swing_num) ...
+    ComputeStageCost(x, u, t, dt, robot, short_mpc.cost_params);
+short_mpc.swing_params.length(1) = long_mpc_sol.swing_xpos(1);
+short_mpc.swing_params.tf(1) = long_mpc_sol.swing_tf(1);
+mpc_dt = short_mpc.swing_params.tf(1);
+
+while t0 < tf
+    short_mpc.swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foot_r);
 
     % Compute MPC
     [tmpc, umpc, qmpc, vmpc, posmpc, tempc, qempc, vempc, pos_empc, costmpc] = ...
-        MpcFunction(q0, v0, pos0, swing_params, warmstart);
+        short_mpc.mpc(q0, v0, pos0, short_mpc.swing_params, short_warmstart, short_mpc.cost_fcn);
+    AnimateRobot(robot, tmpc, qmpc, posmpc, tempc, qempc, vempc, pos_empc);
 
     % Update warmstart
     % warmstart.q = qmpc;
@@ -73,7 +86,7 @@ for i = 1:num_mpc_solves
         v0 = v(:, time_idx - 1);
         pos0 = pos(:, time_idx - 1);
 
-        swing_params.start_pos = ForwardKinematics(robot, q(:,end), v(:,end), robot.swing, robot.foot_r);
+        short_mpc.swing_params.start_pos = ForwardKinematics(robot, q(:,end), v(:,end), robot.swing, robot.foot_r);
     end
 
     if in_contact
@@ -89,24 +102,49 @@ for i = 1:num_mpc_solves
         v0 = ve(:, end);
         pos0 = pos_e(:, end);
 
+        % Plot the impact states
+        figure(impacts);
+        for i = 1:robot.nq
+            nexttile(3*i);
+            hold on;
+            scatter(num_contacts, qe(i, end), "blue", "filled");
+            scatter(num_contacts, long_mpc_sol.qe(i, 1));
+            hold off;
+        end
+
         global last_contact_time;
         last_contact_time = te(end);
 
-        % Replan with the hybrid MPC
+        % Replan high level MPC solve
+        %long_mpc_sol = long_mpc.mpc(q0, v0, pos0, long_mpc.swing_params, long_warmstart, long_mpc.cost_fcn);
+        
+        short_mpc.swing_params.terminal_constraint = UpdateTerminalConstraint(long_mpc_sol, num_contacts + 2);
+        short_mpc.swing_params.terminal_constraint
 
+        short_mpc.cost_params = UpdateShortCostParams(long_mpc_sol, num_contacts + 2);
+        % short_mpc.cost_params.pose_target = short_mpc.swing_params.terminal_constraint(1:robot.nq);
+        % short_mpc.cost_params.vel_target = short_mpc.swing_params.terminal_constraint(robot.nq + 1:robot.nq + robot.nv);
+        % short_mpc.cost_params.pos_target = short_mpc.swing_params.terminal_constraint(11:end);
+        short_mpc.cost_fcn = @(x, u, t, dt, swing_num) ...
+            ComputeStageCost(x, u, t, dt, robot, short_mpc.cost_params);
+        short_mpc.swing_params.length(1) = long_mpc_sol.swing_xpos(num_contacts + 2);
+        short_mpc.swing_params.tf(1) = long_mpc_sol.swing_tf(num_contacts + 2);
+        mpc_dt = short_mpc.swing_params.tf(1);
 
+        num_contacts = num_contacts + 1;
         % Adjust short term MPC targets
-        swing_params.no_swing_constraint = 1;
-
-        swing_params.start_pos = ForwardKinematics(robot, qe(:,end), ve(:,end), robot.swing, robot.foot_r);
+        if num_contacts >= 3
+            short_mpc.swing_params.no_swing_constraint = 1;
+        end
+        short_mpc.swing_params.start_pos = ForwardKinematics(robot, qe(:,end), ve(:,end), robot.swing, robot.foot_r);
     end
 
     if ~isempty(te)
-        swing_params.time_into_swing = sol.x(end) - te(end);
+        short_mpc.swing_params.time_into_swing = sol.x(end) - te(end);
     else
-        swing_params.time_into_swing = sol.x(end);
-        if swing_params.time_into_swing >= swing_params.tf(1)
-            swing_params.time_into_swing = swing_params.tf(1) - 0.02;
+        short_mpc.swing_params.time_into_swing = sol.x(end);
+        if short_mpc.swing_params.time_into_swing >= short_mpc.swing_params.tf(1)
+            short_mpc.swing_params.time_into_swing = short_mpc.swing_params.tf(1) - 0.02;
         end
     end
 
@@ -114,15 +152,18 @@ for i = 1:num_mpc_solves
     % Plot
     t_offset = t0;
     if length(te) > 1
-        t_offset = te(end - 1);
+        %t_offset = te(end - 1) + sol.x(end);
     end
 
+    figure(tracking);
     qsim = sol.y(1:robot.nq, :);
     for i = 1:robot.nq
         nexttile(3*i - 2);
         hold on;
-        plot(sol.x, qsim(i, :));
-        plot(tmpc + t_offset, qmpc(i, :), "LineStyle","--");
+        plot(sol.x, qsim(i, :), 'LineWidth', 2, "Color", [0 0.4470 0.7410]);
+        plot(tmpc + t_offset, qmpc(i, :), "LineStyle", "--",...
+            'LineWidth', 2, "Color", [0.8500 0.3250 0.0980]);
+        scatter(sol.x(1), qsim(i, 1), "magenta", "filled");
         hold off;
     end
 
@@ -130,15 +171,19 @@ for i = 1:num_mpc_solves
     for i = 1:robot.nv
         nexttile(3*i - 1);
         hold on;
-        plot(sol.x, vsim(i, :));
-        plot(tmpc + t_offset, vmpc(i, :), "LineStyle","--");
+        plot(sol.x, vsim(i, :), 'LineWidth', 2, "Color", [0 0.4470 0.7410]);
+        plot(tmpc + t_offset, vmpc(i, :), "LineStyle", "--",...
+            'LineWidth', 2, "Color", [0.8500 0.3250 0.0980]);
+        scatter(sol.x(1), vsim(i, 1), "magenta", "filled");
         hold off;
     end
 
     for i = 1:robot.nj_act
         nexttile(3*i);
         hold on;
-        plot(tmpc(1:end-1) + t_offset, umpc(i, :), "LineStyle","--");
+        plot(tmpc(1:end-1) + t_offset, umpc(i, :), "LineStyle", "--",...
+            'LineWidth',2, "Color", [0.8500 0.3250 0.0980]);
+        scatter(tmpc(1) + t_offset, umpc(i, 1), "magenta", "filled");
         hold off;
     end
     %pause;
@@ -147,6 +192,15 @@ for i = 1:num_mpc_solves
     % Update other variables
     t0 = sol.x(end);
 end
+
+sim_sol.q = q;
+sim_sol.v = v;
+sim_sol.pos = pos;
+sim_sol.t = t;
+sim_sol.qe = qe;
+sim_sol.ve = ve;
+sim_sol.pos_e = pos_e;
+sim_sol.te = te;
 
 
 end
@@ -172,9 +226,9 @@ function [height, isterminal, direction] = GroundContact(t, y, robot)
     v = y(robot.nq + 1: robot.nq + robot.nv);
     [pos, vel] = ForwardKinematics(robot, q, v, robot.swing, [0;-robot.calf_length]);
     
-    %if abs(t - last_contact_time) < 1e-1
-    %    height = 0.05;
-    %else
+    if abs(t - last_contact_time) < 1e-2
+       height = 0.05;
+    else
         height = pos(2);
     end
     isterminal = 1;
@@ -238,5 +292,33 @@ function dydt = odefun(t, y, robot, controller)
     % TODO: Do torso acc via casadi
 end
 
+function warmstart = MakeBasicWarmstart(q0, v0, pos0, total_nodes, robot)
+    warmstart.q = zeros(robot.nq, total_nodes);
+    warmstart.v = zeros(robot.nv, total_nodes);
+    warmstart.pos = zeros(2, total_nodes);
+    warmstart.tau = zeros(robot.nj_act, total_nodes);
+    
+    for node = 1:total_nodes
+        warmstart.q(:, node) = q0;
+        warmstart.v(:, node) = v0;
+        warmstart.pos(:, node) = pos0;
+        warmstart.tau(:, node) = zeros(robot.nj_act, 1);
+    end
+end
 
+function terminal_constraint = UpdateTerminalConstraint(long_mpc_sol, contact_num)
+    % Get the index
+    i = 1;
+    while long_mpc_sol.t(i) < long_mpc_sol.te(contact_num)
+        i = i + 1;
+    end
+
+    i = i - 1;
+
+    terminal_constraint = [long_mpc_sol.q(:, i); long_mpc_sol.v(:, i); long_mpc_sol.pos(:, i)];
+end
+
+function cost_params = UpdateCostParams(long_mpc_sol, contact_num)
+    
+end
 
