@@ -38,7 +38,7 @@ AnimateRobot(robot, long_mpc_sol.t, long_mpc_sol.q, long_mpc_sol.pos, long_mpc_s
 short_mpc.swing_params.terminal_constraint = UpdateTerminalConstraint(long_mpc_sol, 1);
 short_mpc.swing_params.terminal_constraint
 
-short_mpc.cost_params = UpdateCostParams(long_mpc_sol, num_contacts + 2, robot);
+short_mpc.cost_params = UpdateCostParams(long_mpc_sol, num_contacts + 1, robot);
 % short_mpc.cost_params.pose_target = short_mpc.swing_params.terminal_constraint(1:robot.nq);
 % short_mpc.cost_params.vel_target = short_mpc.swing_params.terminal_constraint(robot.nq + 1:robot.nq + robot.nv);
 % short_mpc.cost_params.pos_target = short_mpc.swing_params.terminal_constraint(11:end);
@@ -46,7 +46,29 @@ short_mpc.cost_fcn = @(x, u, t, dt, swing_num) ...
     SinglePhaseTrackingCost(t, x, u, dt, robot, short_mpc.cost_params);
 %short_mpc.swing_params.length(1) = long_mpc_sol.swing_xpos(1);
 %short_mpc.swing_params.tf(1) = long_mpc_sol.swing_tf(1);
-mpc_dt = short_mpc.swing_params.tf(1);
+%mpc_dt = short_mpc.swing_params.tf(1);
+
+short_warmstart = UpdateWarmStart(short_mpc, robot);
+
+% Plots for debugging     
+debugging = figure;
+tiledlayout(5,3);
+for i = 1:robot.nq
+    nexttile(i*3 - 2);
+    hold on;
+    plot(short_mpc.cost_params.t_ref, short_mpc.cost_params.q_target(i, :));
+    hold off;
+
+    hold on;
+    nexttile(i*3 - 1);
+    plot(short_mpc.cost_params.t_ref, short_mpc.cost_params.v_target(i, :));
+    hold off;
+
+    hold on;
+    nexttile(i*3);
+    plot(short_mpc.cost_params.t_ref, short_mpc.cost_params.u_target(i, :));
+    hold off;
+end
 
 while t0 < tf
     short_mpc.swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foot_r);
@@ -56,11 +78,43 @@ while t0 < tf
         short_mpc.mpc(q0, v0, pos0, short_mpc.swing_params, short_warmstart, short_mpc.cost_fcn);
     AnimateRobot(robot, tmpc, qmpc, posmpc, tempc, qempc, vempc, pos_empc);
 
-    % Update warmstart
-    % warmstart.q = qmpc;
-    % warmstart.v = vmpc;
-    % warmstart.pos = posmpc;
-    % warmstart.tau = umpc;
+    % Plots for debugging
+    figure(debugging);
+    clf;
+    for i = 1:robot.nq
+        nexttile(i*3 - 2);
+        hold on;
+        plot(tmpc, qmpc(i, :));
+        hold off;
+
+        nexttile(i*3 - 1);
+        hold on;
+        plot(tmpc, vmpc(i, :));
+        hold off;
+
+        nexttile(i*3);
+        hold on;
+        plot(tmpc(1:end-1), umpc(i, :));
+        hold off;
+    end
+
+    figure(debugging);
+    for i = 1:robot.nq
+        nexttile(i*3 - 2);
+        hold on;
+        plot(tmpc(1:end-1), short_warmstart.q(i, :));
+        hold off;
+
+        nexttile(i*3 - 1);
+        hold on;
+        plot(tmpc(1:end-1), short_warmstart.v(i, :));
+        hold off;
+
+        nexttile(i*3);
+        hold on;
+        plot(tmpc(1:end-1), short_warmstart.tau(i, :));
+        hold off;
+    end
 
     % Update Controller
     controller.q = qmpc;
@@ -70,8 +124,6 @@ while t0 < tf
 
     % Simulate
     [sol, in_contact] = Simulate(t0, t0+min(mpc_dt, tf-t0), q0, v0, pos0, robot, controller);
-    % [tsim, qsim, vsim, base_possim, tesim, qesim, vesim, pos_esim] = ...
-    %     RobotSim(robot, q0, v0, pos0, t0, t0 + mpc_dt, tdensity, controller);
 
     in_contact
     sol.x(end)
@@ -107,10 +159,16 @@ while t0 < tf
         % Plot the impact states
         figure(impacts);
         for i = 1:robot.nq
-            nexttile(3*i);
+            nexttile(3*i - 2);
             hold on;
             scatter(num_contacts, qe(i, end), "blue", "filled");
             scatter(num_contacts, long_mpc_sol.qe(i, 1));
+            hold off;
+
+            nexttile(3*i - 1);
+            hold on;
+            scatter(num_contacts, ve(i, end), "blue", "filled");
+            scatter(num_contacts, long_mpc_sol.ve(i, 1));
             hold off;
         end
 
@@ -118,12 +176,12 @@ while t0 < tf
         last_contact_time = te(end);
 
         % Replan high level MPC solve
-        %long_mpc_sol = long_mpc.mpc(q0, v0, pos0, long_mpc.swing_params, long_warmstart, long_mpc.cost_fcn);
+        long_mpc_sol = long_mpc.mpc(q0, v0, pos0, long_mpc.swing_params, long_warmstart, long_mpc.cost_fcn);
         
-        short_mpc.swing_params.terminal_constraint = UpdateTerminalConstraint(long_mpc_sol, num_contacts + 2);
+        short_mpc.swing_params.terminal_constraint = UpdateTerminalConstraint(long_mpc_sol, 1);
         short_mpc.swing_params.terminal_constraint
 
-        short_mpc.cost_params = UpdateCostParams(long_mpc_sol, num_contacts + 2, robot);
+        short_mpc.cost_params = UpdateCostParams(long_mpc_sol, 1, robot);
         % short_mpc.cost_params.pose_target = short_mpc.swing_params.terminal_constraint(1:robot.nq);
         % short_mpc.cost_params.vel_target = short_mpc.swing_params.terminal_constraint(robot.nq + 1:robot.nq + robot.nv);
         % short_mpc.cost_params.pos_target = short_mpc.swing_params.terminal_constraint(11:end);
@@ -139,6 +197,12 @@ while t0 < tf
             short_mpc.swing_params.no_swing_constraint = 1;
         end
         short_mpc.swing_params.start_pos = ForwardKinematics(robot, qe(:,end), ve(:,end), robot.swing, robot.foot_r);
+
+        short_warmstart = UpdateWarmStart(short_mpc, robot);
+    else
+        short_mpc.cost_params.t_ref = short_mpc.cost_params.t_ref - sol.x(end);
+        short_mpc.cost_fcn = @(x, u, t, dt, swing_num) ...
+            SinglePhaseTrackingCost(t, x, u, dt, robot, short_mpc.cost_params);
     end
 
     if ~isempty(te)
@@ -310,12 +374,15 @@ end
 
 function terminal_constraint = UpdateTerminalConstraint(long_mpc_sol, contact_num)
     % Get the index
-    i = 1;
-    while long_mpc_sol.t(i) < long_mpc_sol.te(contact_num)
-        i = i + 1;
+    i = length(long_mpc_sol.t);
+    if ~isempty(long_mpc_sol.te)
+        i = 1;
+        while i <= length(long_mpc_sol.t) && long_mpc_sol.t(i) < long_mpc_sol.te(contact_num)
+            i = i + 1;
+        end
+    
+        i = i - 1;
     end
-
-    i = i - 1;
 
     terminal_constraint = [long_mpc_sol.q(:, i); long_mpc_sol.v(:, i); long_mpc_sol.pos(:, i)];
 end
@@ -341,10 +408,33 @@ function cost_params = UpdateCostParams(long_mpc_sol, contact_num, robot)
         cost_params.pos_target(:, k) = long_mpc_sol.pos(:, k);
     end
 
-    cost_params.q_weight = [500, 500, 500, 500, 500]';
+    cost_params.q_weight = 40*[500, 500, 500, 500, 500]';
     cost_params.v_weight = [500., 500., 500., 500., 500.]';
-    cost_params.u_weight = 0*[0.001, 1, 0.001, 1, 1]';
+    cost_params.u_weight = [10, 10, 10, 10, 10]';
     cost_params.pos_weight = [300, 1000]';
 
+end
+
+function warmstart = UpdateWarmStart(mpc, robot)
+    total_nodes = sum(mpc.swing_params.nodes);
+
+    warmstart.q = zeros(robot.nq, total_nodes);
+    warmstart.v = zeros(robot.nv, total_nodes);
+    warmstart.pos = zeros(2, total_nodes);
+    warmstart.tau = zeros(robot.nj_act, total_nodes);
+    
+    t = linspace(0, mpc.swing_params.tf, total_nodes);
+
+    for node = 1:total_nodes
+        for i = 1:robot.nq
+            warmstart.q(i, node) = interp1(mpc.cost_params.t_ref, mpc.cost_params.q_target(i, :), t(node), "linear", mpc.cost_params.q_target(i, end));
+            warmstart.v(i, node) = interp1(mpc.cost_params.t_ref, mpc.cost_params.v_target(i, :), t(node), "linear", mpc.cost_params.v_target(i, end));
+            warmstart.tau(i, node) = interp1(mpc.cost_params.t_ref, mpc.cost_params.u_target(i, :), t(node), "linear", mpc.cost_params.u_target(i, end));
+        end
+
+        for i = 1:2
+            warmstart.pos(:, node) = interp1(mpc.cost_params.t_ref, mpc.cost_params.pos_target(i, :), t(node), "linear", mpc.cost_params.pos_target(i, end));
+        end
+    end
 end
 

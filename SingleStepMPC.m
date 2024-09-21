@@ -90,10 +90,11 @@ for swing = 1:swing_params.num_swings
             end
 
             % Add equality constraint for the swing foot
-            fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
-            g = [g, {fk_pos - des_swing_pos}];
-            lbg = [lbg; zeros(2,1)];
-            ubg = [ubg; zeros(2,1)];
+            %fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
+            %g = [g, {fk_pos - des_swing_pos}];
+            %lbg = [lbg; zeros(2,1)];
+            %ubg = [ubg; zeros(2,1)];
+
         % elseif k > 1
         %     fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
         %     g = [g, {fk_pos(2)}];
@@ -123,9 +124,9 @@ for swing = 1:swing_params.num_swings
         % ---------- Terminal Constraint ---------- %
         if k == swing_params.nodes(swing)
             if swing ~= swing_params.no_swing_constraint
-                g = [g, {Xk - swing_params.terminal_constraint}];
-                lbg = [lbg; zeros(node_qvp, 1)];
-                ubg = [ubg; zeros(node_qvp, 1)];
+                %g = [g, {Xk - swing_params.terminal_constraint}];
+                %lbg = [lbg; zeros(node_qvp, 1)];
+                %ubg = [ubg; zeros(node_qvp, 1)];
             end
 
             current_foot_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);

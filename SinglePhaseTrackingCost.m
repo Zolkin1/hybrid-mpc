@@ -4,10 +4,21 @@ function cost = SinglePhaseTrackingCost(t, x, u, dt, robot, params)
     v = x(robot.nq + 1: robot.nq + robot.nv);
     pos = x(11:end);
 
-    q_target = interp1(params.t_ref, params.q_target', t)';
-    v_target = interp1(params.t_ref, params.v_target', t)';
-    u_target = interp1(params.t_ref, params.u_target', t)';
-    pos_target = interp1(params.t_ref, params.pos_target', t)';
+    q_target = zeros(robot.nq, 1);
+    v_target = zeros(robot.nv, 1);
+    pos_target = zeros(2, 1);
+    u_target = zeros(robot.nj_act, 1);
+
+    for i = 1:robot.nq
+        q_target(i) = interp1(params.t_ref, params.q_target(i, :)', t, 'linear', params.q_target(i, end))';
+        v_target(i) = interp1(params.t_ref, params.v_target(i, :)', t, 'linear', params.v_target(i, end))'; % 0
+        u_target(i) = interp1(params.t_ref, params.u_target(i, :)', t, 'linear', 0)';
+    end
+ 
+    for i = 1:2
+        pos_target(i) = interp1(params.t_ref, params.pos_target(i, :)', t, 'linear', params.pos_target(i, end)')';
+    end
+
 
     cost = cost + qTracking(q, q_target, params.q_weight);
     cost = cost + vTracking(v, v_target, params.v_weight);

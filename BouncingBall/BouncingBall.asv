@@ -1,0 +1,117 @@
+clc;
+clear;
+close all;
+
+%%
+BallParams.M = 1;
+BallParams.r = 0.1;
+BallParams.g = [0; -9.81];
+BallParams.gamma = 0.8;
+
+pos0 = [1, 1];
+
+
+GuardParams.num = 6;
+GuardParams.G = zeros(GuardParams.num, 2, 2);
+GuardParams.G(1, :, :) = [0, 0; 5, 0];
+GuardParams.G(2, :, :) = [0, 0; 0, 5];
+GuardParams.G(3, :, :) = [4, 2; 6, 2];
+GuardParams.G(4, :, :) = [4, 2; 4, 4];
+GuardParams.G(5, :, :) = [6, 2; 6, 4];
+GuardParams.G(6, :, :) = [4, 4; 6, 4];
+
+GuardParams.Color(1) = "k";
+GuardParams.Color(2) = "k";
+GuardParams.Color(3) = "b";
+GuardParams.Color(4) = "b";
+GuardParams.Color(5) = "b";
+GuardParams.Color(6) = "b";
+
+GuardParams.Direction{1} = [-1, 1, 0, 10];
+GuardParams.Direction{2} = [-1, 2, 0, 10];
+GuardParams.Direction{3} = [0, 2, 2, 4];
+GuardParams.Direction{4} = [0, 1, 4, 6];
+GuardParams.Direction{5} = [0, 1, 4, 6];
+GuardParams.Direction{6} = [0, 2, 2, 4];
+
+GuardParams.Value(1) = 0;
+GuardParams.Value(2) = 0;
+GuardParams.Value(3) = 2;
+GuardParams.Value(4) = 4;
+GuardParams.Value(5) = 6;
+GuardParams.Value(6) = 4;
+
+%%
+t0 = 0;
+tf = 5;
+
+controller.Compute = @(t, x) ZeroController();
+
+x0 = [1; 1; 0; 0];
+
+%% CEM
+CostParams.position_target = [3; 3];
+CostParams.position_weight = [50; 50];
+CostParams.velocity_target = [0; 0];
+CostParams.velocity_weight = 0*[1; 1];
+CostParams.u_target = [0; 0];
+CostParams.u_weight = 0[1; 1];
+cem_controller = CreateCEMControllerBall(tf - t0, x0, BallParams, GuardParams, CostParams);
+
+%% Simulate
+tsim = t0;
+sol = [];
+while tsim < tf
+    sol = [sol, BallSimulation(tsim, tf, x0, cem_controller, BallParams, GuardParams)];
+    x0 = ResetMap(sol(end), BallParams, GuardParams);
+    tsim = sol(end).x(end);
+end
+
+
+%% Plot
+AnimateBall(sol, BallParams, GuardParams);
+
+%% Controller Functions
+function u = ZeroController()
+    u = zeros(2, 1);
+end
+
+%% Plotting Functions
+function PlotGuards(GuardParams)
+hold on;
+    for i = 1:size(GuardParams.G, 1)
+        plot(GuardParams.G(i, :, 1), GuardParams.G(i, :, 2), GuardParams.Color(i), "LineWidth", 2)
+    end
+hold off;
+end
+
+
+function AnimateBall(sol, BallParams, GuardParams)
+sim = figure;
+figure(sim);
+
+
+pause;
+for j = 1:length(sol)
+    t = linspace(sol(j).x(1), sol(j).x(end), ceil((sol(j).x(end)-sol(j).x(1))*100));
+    for i = 1:length(t)
+        clf;
+        PlotGuards(GuardParams);
+    
+        x = deval(sol(j), t(i));
+        circle(x(1), x(2), BallParams.r);
+        axis equal
+        drawnow limitrate;
+        pause(0.01);
+    end
+end
+end
+
+function h = circle(x,y,r)
+    hold on
+    th = 0:pi/50:2*pi;
+    xunit = r * cos(th) + x;
+    yunit = r * sin(th) + y;
+    h = plot(xunit, yunit);
+    hold off
+end

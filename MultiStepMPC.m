@@ -119,8 +119,13 @@ for swing = 1:swing_params.num_swings
             t = [t; k*dt + te(end)];
         end
 
-        % ---------- Impact Map ---------- %
         if k == swing_params.nodes(swing)
+            % ---------- Guard Constraint ---------- %
+            g = [g, {Xk(robot.nq + 1:robot.nq + robot.nv)}];
+            lbg = [lbg; zeros(robot.nv, 1)];
+            ubg = [ubg; zeros(robot.nv, 1)];
+
+            % ---------- Impact Map ---------- %
             % New variable for the result of the impact map
             reset_result = ImpactMap(Xk, robot);
             temp = Xk;

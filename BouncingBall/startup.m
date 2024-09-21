@@ -1,0 +1,1 @@
+addpath('/home/zolkin/Repos/casadi/v3_6_6/casadi-3.6.6-linux64-matlab2018b');

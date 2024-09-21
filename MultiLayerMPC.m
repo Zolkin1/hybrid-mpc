@@ -30,7 +30,7 @@ controller.Compute = @(tc, qc, vc, controller) MpcController(tc, qc, vc, control
 %% Long Horizon MPC
 % Swing Parameters
 long_swing_params.apex = 0.1;
-long_swing_params.num_swings = 6; %6;
+long_swing_params.num_swings = 3; %6;
 long_swing_params.nodes = 30*ones(long_swing_params.num_swings, 1);
 long_swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foot_r);
 long_swing_params.time_into_swing = 0.0;
@@ -63,7 +63,7 @@ long_costfcn = @(x, u, t, dt) ...
 %% Short Horizon MPC
 % Swing Parameters
 short_swing_params.apex = 0.1;
-short_swing_params.tf = [0.25];
+short_swing_params.tf = [0.25]; % This is actually the planning horizon
 short_swing_params.nodes = [30];
 short_swing_params.length = [0.2];
 short_swing_params.num_swings = 1;
@@ -95,7 +95,7 @@ short_costfcn = @(x, u, t, dt, swing_num) ...
     ComputeStageCost(x, u, t, dt, robot, short_cost_params);
 
 %% Run MPC in the loop
-mpc_dt = 0.25; %0.15;
+mpc_dt = 0.1; %0.15;
 mpc_sim_tf = 1;
 
 MpcFunction = @(q0, v0, pos0, swing_params, warmstart, cost_fcn) SingleStepMPC(robot, q0, v0, pos0, swing_params, cost_fcn, warmstart);
