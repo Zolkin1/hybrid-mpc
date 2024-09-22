@@ -89,11 +89,11 @@ for dom = 1:domains.num
         %     ubg = [ubg; inf];
         % end
 
-        % if ~domains.guard_idx(dom) == 3
-        %     g = [g, {norm(Xk(1:2) - GuardParams.G{3}(1:2)')}];
-        %     lbg = [lbg; GuardParams.G{3}(3)];
-        %     ubg = [ubg; inf];
-        % end
+        if dom ~= domains.num && ~domains.guard_idx(dom) == 3
+            g = [g, {norm(Xk(1:2) - GuardParams.G{3}(1:2)')}];
+            lbg = [lbg; GuardParams.G{3}(3)];
+            ubg = [ubg; inf];
+        end
 
         % if domains.type(dom) == 2
         %     g = [g, {dot(Xk(1:2) - GuardParams.G{3}(1:2)', Xk(1:2) - GuardParams.G{3}(1:2)')}];

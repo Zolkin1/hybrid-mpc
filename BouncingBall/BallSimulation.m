@@ -7,9 +7,11 @@ function dxdt = BallDynamics(t, x, controller, BallParams, GuardParams)
     dxdt = zeros(4, 1);
     dxdt(1:2) = x(3:4);
     if norm(x(1:2) - GuardParams.G{3}(1:2)) < GuardParams.G{3}(3)
-        dxdt(3:4) = BallParams.drag*norm(x(3:4))^2*x(3:4) + min(max(controller.Compute(t, x), -BallParams.ForceLim), BallParams.ForceLim)/BallParams.M;
+        dxdt(3:4) = BallParams.drag*norm(x(3:4))^2*x(3:4) + ...
+            min(max(controller.Compute(t, x), -BallParams.ForceLim), BallParams.ForceLim)/BallParams.M;
     else
-        dxdt(3:4) = BallParams.drag*norm(x(3:4))^2*x(3:4) + BallParams.g + max(min(controller.Compute(t, x), [0; 0]), -BallParams.ForceLim)/BallParams.M;
+        dxdt(3:4) = BallParams.drag*norm(x(3:4))^2*x(3:4) + BallParams.g +...
+            max(min(controller.Compute(t, x), [0; 0]), -BallParams.ForceLim)/BallParams.M;
     end
 end
 

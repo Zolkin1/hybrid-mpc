@@ -1,15 +1,19 @@
-function sol = BallSimulation(t0, tf, x0, controller, BallParams, GuardParams)
+function sol = BallSimulationDisturbance(t0, tf, x0, controller, BallParams, GuardParams, w)
     options = odeset('Events', @(t,x) GuardConditions(t, x, BallParams, GuardParams), 'Refine', 8);
-    sol = ode45(@(t, x) BallDynamics(t, x, controller, BallParams, GuardParams), [t0, tf], x0, options);
+    sol = ode45(@(t, x) BallDynamics(t, x, controller, BallParams, GuardParams, w), [t0, tf], x0, options);
 end
 
-function dxdt = BallDynamics(t, x, controller, BallParams, GuardParams)
+function dxdt = BallDynamics(t, x, controller, BallParams, GuardParams, w)
     dxdt = zeros(4, 1);
     dxdt(1:2) = x(3:4);
     if norm(x(1:2) - GuardParams.G{3}(1:2)) < GuardParams.G{3}(3)
-        dxdt(3:4) = BallParams.drag*norm(x(3:4))^2*x(3:4) + min(max(controller.Compute(t, x), -BallParams.ForceLim), BallParams.ForceLim)/BallParams.M;
+        dxdt(3:4) = BallParams.drag*norm(x(3:4))^2*x(3:4) + ...
+            min(max(controller.Compute(t, x), -BallParams.ForceLim), BallParams.ForceLim)/BallParams.M + ...
+            w(t)/BallParams.M;
     else
-        dxdt(3:4) = BallParams.drag*norm(x(3:4))^2*x(3:4) + BallParams.g + max(min(controller.Compute(t, x), [0; 0]), -BallParams.ForceLim)/BallParams.M;
+        dxdt(3:4) = BallParams.drag*norm(x(3:4))^2*x(3:4) + BallParams.g +...
+            max(min(controller.Compute(t, x), [0; 0]), -BallParams.ForceLim)/BallParams.M + ...
+            w(t)/BallParams.M;
     end
 end
 
@@ -34,8 +38,9 @@ function [value, isterminal, direction] = GuardConditions(t, x, BallParams, Guar
                 end
             end
         else
-            direction(i) = 0;
-            value(i) = norm(x(1:2) - GuardParams.G{3}(1:2))
+            direction(i) = -1;
+            value(i) = norm(x(1:2) - GuardParams.G{3}(1:2)) - GuardParams.G{3}(3);
+            value(i);
         end
 
         direction(i) = GuardParams.Direction{i}(1);
