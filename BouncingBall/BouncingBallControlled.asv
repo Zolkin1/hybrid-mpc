@@ -45,7 +45,7 @@ costfcn = @(x, u, dt) BallStageCost(x, u, dt, CostParams);
 
 %%
 t0 = 0;
-tf = 5;
+tf = 3; %5;
 
 controller.Compute = @(t, x) ZeroController();
 
@@ -76,17 +76,18 @@ end
 
 %AnimateBall(cem_sol, BallParams, GuardParams);
 
+x0 = x0_og;
 domains = ExtractDomainInfo(x0, (tf-t0), cem_controller, BallParams, GuardParams);
 domains
 terminal = false;
 for dom = 1:length(domains.guard_idx)
-    if domains.guard_idx(end) == 3
+    if domains.guard_idx(dom) == 3
         terminal = true;
-        error("CEM did not find the terminal constraint");
     end
 end
 
-if terminal
+if ~terminal
+    error("CEM did not find the terminal constraint");
 end
 
 warmstart = CreateWarmstart(cem_sol, cem_controller, domains);
@@ -105,6 +106,11 @@ while tsim < tf
 
     % Simulate
     mpc_sol = [mpc_sol, BallSimulation(tsim, min(tf, tsim + mpc_dt), x0, mpc_controller, BallParams, GuardParams)];
+
+    PlotSimAndTraj(mpc_sol(end), tmpc, xmpc, umpc);
+
+    % TODO: Plot results (sim and MPC)
+
     x0 = mpc_sol(end).y(:, end);
     if ~isempty(mpc_sol(end).ie)
         x0 = ResetMap(mpc_sol(end), BallParams, GuardParams);
@@ -114,7 +120,14 @@ while tsim < tf
 
         domains = ExtractDomainInfo(x0, (tf-t0), cem_controller, BallParams, GuardParams);
         domains
-        if domains.guard_idx(end) ~= 3
+        terminal = false;
+        for dom = 1:length(domains.guard_idx)
+            if domains.guard_idx(dom) == 3
+                terminal = true;
+            end
+        end
+        
+        if ~terminal
             error("CEM did not find the terminal constraint");
         end
     else
@@ -165,7 +178,7 @@ function u = ZeroController()
 end
 
 function uout = MpcController(t, x, u, tu)
-uout = interp1(tu(1:end-1), u', t)';
+    uout = interp1(tu(1:end-1), u', t)';
 end
 
 %% Plotting
@@ -244,6 +257,23 @@ for i = 1:length(warm_start.x)
     warm_start.u(:, i) = cem_controller.Compute(t(i), warm_start.x(:, i));
 end
 
+end
+
+%% Plotting
+function PlotSimAndTraj(sim_sol, tmpc, xmpc)
+    for i = 1:2
+        nexttile(3*i - 2);
+        plot(sim_sol.x, sim_sol.y(i), "LineWidth", 2, "Color", [0 0.4470 0.7410]);
+        plot(tmpc, xmpc(i), "LineStyle", "--", "LineWidth", 2, "Color", [0.8500 0.3250 0.0980]);
+   
+        nexttile(3*i - 1);
+        plot(sim_sol.x, sim_sol.y(i + 2), "LineWidth", 2, "Color", [0 0.4470 0.7410]);
+        plot(tmpc, xmpc(i + 2), "LineStyle", "--", "LineWidth", 2, "Color", [0.8500 0.3250 0.0980]);
+
+        nexttile(3*i - );
+        plot(sim_sol.x, sim_sol.y(i + 2), "LineWidth", 2, "Color", [0 0.4470 0.7410]);
+        plot(tmpc, xmpc(i + 2), "LineStyle", "--", "LineWidth", 2, "Color", [0.8500 0.3250 0.0980]);
+    end
 end
 
 

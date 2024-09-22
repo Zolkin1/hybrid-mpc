@@ -95,6 +95,8 @@ warmstart = CreateWarmstart(cem_sol, cem_controller, domains);
 tsim = t0;
 mpc_sol = [];
 x0 = x0_og;
+mpc_sim = figure();
+tiledlayout(2, 3);
 while tsim < tf
     % TODO: Update warm start
 
@@ -102,31 +104,37 @@ while tsim < tf
     [tmpc, xmpc, umpc, te, xe] = BouncingBallMPC(domains, costfcn, x0, warmstart, BallParams, GuardParams);
     
     % Create MPC controller
-    mpc_controller.Compute = @(t, x) MpcController(t, x, umpc, tmpc);
+    mpc_controller.Compute = @(t, x) MpcController(t, x, umpc, tmpc + tsim);
 
     % Simulate
     mpc_sol = [mpc_sol, BallSimulation(tsim, min(tf, tsim + mpc_dt), x0, mpc_controller, BallParams, GuardParams)];
 
-    % TODO: Plot results (sim and MPC)
+    figure(mpc_sim);
+    PlotSimAndTraj(mpc_sol(end), tmpc, xmpc, umpc);
 
     x0 = mpc_sol(end).y(:, end);
-    if ~isempty(mpc_sol(end).ie)
+    if ~isempty(mpc_sol(end).ie) && mpc_sol(end).ie(1) ~= 3
         x0 = ResetMap(mpc_sol(end), BallParams, GuardParams);
 
         % Compute CEM
-        cem_controller = CreateCEMControllerBall(tf - t0, x0, BallParams, GuardParams, CostParams);
+        cem_controller_new = CreateCEMControllerBall(tf - t0, x0, BallParams, GuardParams, CostParams);
 
-        domains = ExtractDomainInfo(x0, (tf-t0), cem_controller, BallParams, GuardParams);
-        domains
+        domains_new = ExtractDomainInfo(x0, (tf-t0), cem_controller_new, BallParams, GuardParams);
+        domains_new
+
+        warmstart = CreateWarmstart(cem_sol, cem_controller_new, domains_new);
+
         terminal = false;
-        for dom = 1:length(domains.guard_idx)
-            if domains.guard_idx(dom) == 3
+        for dom = 1:length(domains_new.guard_idx)
+            if domains_new.guard_idx(dom) == 3
                 terminal = true;
             end
         end
-        
+
         if ~terminal
-            error("CEM did not find the terminal constraint");
+            warning("CEM did not find the terminal constraint");
+        else
+            domains = domains_new;
         end
     else
         if domains.T(1) > mpc_dt
@@ -138,10 +146,13 @@ while tsim < tf
                 domains.T(1) = [];
                 domains.type(1) = [];
                 domains.guard_idx(1) = [];
-                domains.variable(1) = [];
-                domains.guard_constraint(1) = [];
-                domains.guard_val(1) = [];
+                if length(domains.variable) > 1
+                    domains.variable(1) = [];
+                    domains.guard_constraint(1) = [];
+                    domains.guard_val(1) = [];
+                end
                 domains.nodes(1) = [];
+                domains.num = domains.num - 1;
             end
 
             domains.T(1) = domains.T(1) - diff;
@@ -255,6 +266,31 @@ for i = 1:length(warm_start.x)
     warm_start.u(:, i) = cem_controller.Compute(t(i), warm_start.x(:, i));
 end
 
+end
+
+%% Plotting
+function PlotSimAndTraj(sim_sol, tmpc, xmpc, umpc)
+    for i = 1:2
+        nexttile(3*i - 2);
+        hold on;
+        plot(sim_sol.x, sim_sol.y(i, :), "LineWidth", 2, "Color", [0 0.4470 0.7410]);
+        plot(tmpc + sim_sol.x(1), xmpc(i, :), "LineStyle", "--", "LineWidth", 2, "Color", [0.8500 0.3250 0.0980]);
+        scatter(sim_sol.x(1), sim_sol.y(i, 1), "magenta", "filled");
+        hold off;
+   
+        nexttile(3*i - 1);
+        hold on;
+        plot(sim_sol.x, sim_sol.y(i + 2, :), "LineWidth", 2, "Color", [0 0.4470 0.7410]);
+        plot(tmpc + sim_sol.x(1), xmpc(i + 2, :), "LineStyle", "--", "LineWidth", 2, "Color", [0.8500 0.3250 0.0980]);
+        scatter(sim_sol.x(1), sim_sol.y(i + 2, 1), "magenta", "filled");
+        hold off;
+
+        nexttile(3*i);
+        hold on;
+        plot(tmpc(1:end-1) + sim_sol.x(1), umpc(i, :), "LineStyle", "--", "LineWidth", 2, "Color", [0.8500 0.3250 0.0980]);
+        scatter(tmpc(1) + sim_sol.x(1), umpc(i, 1), "magenta", "filled");
+        hold off;
+    end
 end
 
 
