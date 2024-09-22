@@ -1,8 +1,11 @@
-function [t, x, u, te, xe] = BouncingBallMPC(domains, costfcn, x0, BallParams, GuardParams)
+function [t, x, u, te, xe] = BouncingBallMPC(domains, costfcn, x0, warm_start, BallParams, GuardParams)
 %BOUNCINGBALLMPC 
 %   
 
 import casadi.*
+
+t = 0;
+te = [];
 
 % Start with an empty NLP
 w={};       % decision variables
@@ -15,6 +18,13 @@ lbg = [];   % lower and upper bound on the general constraint
 ubg = [];
 
 node_states = 4;
+node_inputs = 2;
+
+% warm_start.x = zeros(node_states, sum(domains.nodes));
+% for i = 1:length(warm_start.x)
+%     warm_start.x(:, i) = x0;
+% end
+% warm_start.u = zeros(node_inputs, sum(domains.nodes));
 
 % IC Constraint
 Xk = MX.sym('X0', node_states);
@@ -28,14 +38,11 @@ count = 1;
 var_idx = 1;
 ws_node_idx = 1;
 
-if swing_params.num_swings ~= 1
-    error("Number of swing must be 1 for the short horizon mpc!");
-end
-
 for dom = 1:domains.num
+    dt = domains.T(dom)/domains.nodes(dom);
     for k = 1:domains.nodes(dom)
         % New NLP variable for the control
-        Uk = MX.sym(['U_' num2str(var_idx)], robot.nj_act);
+        Uk = MX.sym(['U_' num2str(var_idx)], 2);
         var_idx = var_idx + 1;
         w = {w{:}, Uk};
 
@@ -45,7 +52,7 @@ for dom = 1:domains.num
         else
             ubw = [ubw; BallParams.ForceLim];
         end
-        w0 = [w0;  warm_start.tau(:, ws_node_idx)];
+        w0 = [w0;  warm_start.u(:, ws_node_idx)];
     
         % ---------- Dynamics ---------- %
         Xk_end = DiscreteDynamics(Xk, Uk, dt, domains.type(dom), BallParams);
@@ -54,7 +61,7 @@ for dom = 1:domains.num
         J = J + costfcn(Xk_end, Uk, dt);
 
         % New NLP variable for state at end of interval
-        Xk = MX.sym(['X_' num2str(var_idx)], node_qvp);
+        Xk = MX.sym(['X_' num2str(var_idx)], node_states);
         var_idx = var_idx + 1;
         w = [w, {Xk}];
         lbw = [lbw; -inf*ones(node_states, 1)];
@@ -63,40 +70,80 @@ for dom = 1:domains.num
     
         % Add equality constraint for the shooting nodes
         g = [g, {Xk_end-Xk}];
-        lbg = [lbg; zeros(node_qvp,1)];
-        ubg = [ubg; zeros(node_qvp,1)];
+        lbg = [lbg; zeros(node_states,1)];
+        ubg = [ubg; zeros(node_states,1)];
         
-        if dom ~= domains.num && k == domains.nodes(dom)
-            % ---------- Guard Constraints ---------- %
-            g = [g, {Xk(domains.variable(dom)) - domains.guard_val(dom)}];
-            lbg = [lbg; 0];
-            ubg = [ubg; 0];
+        t = [t; t(end) + dt];
 
-            if domains.variable(dom) == 1
-                g = [g, {Xk(2)}];
+        % ---------- Guard Avoid Constraints ---------- %  
+        % Avoid all the guards
+        % if  k > 10 && ~(domains.guard_idx(dom) == 2) % k == domains.nodes(dom) && 
+        %     g = [g, {Xk(1)}];
+        %     lbg = [lbg; BallParams.r];
+        %     ubg = [ubg; inf];
+        % end
+        % 
+        % if  k > 10 && ~(domains.guard_idx(dom) == 1) % k == domains.nodes(dom) &&
+        %     g = [g, {Xk(2)}];
+        %     lbg = [lbg; BallParams.r];
+        %     ubg = [ubg; inf];
+        % end
+
+        % if ~domains.guard_idx(dom) == 3
+        %     g = [g, {norm(Xk(1:2) - GuardParams.G{3}(1:2)')}];
+        %     lbg = [lbg; GuardParams.G{3}(3)];
+        %     ubg = [ubg; inf];
+        % end
+
+        % if domains.type(dom) == 2
+        %     g = [g, {dot(Xk(1:2) - GuardParams.G{3}(1:2)', Xk(1:2) - GuardParams.G{3}(1:2)')}];
+        %     lbg = [lbg; -1];
+        %     ubg = [ubg; GuardParams.G{3}(3)^2];
+        % end
+
+        if dom ~= domains.num && k == domains.nodes(dom)
+            % g = [g, {[Xk(1); Xk(2)]}];
+            % lbg = [lbg; [0; 0.1]];
+            % ubg = [ubg; [10; 0.1]];
+            % ---------- Guard Constraints ---------- %
+            if domains.guard_idx(dom) == 1 || domains.guard_idx(dom) == 2
+                g = [g, {Xk(domains.variable(dom)) - BallParams.r - domains.guard_val(dom)}];
+                lbg = [lbg; 0];
+                ubg = [ubg; 0];
+    
+                if domains.variable(dom) == 1
+                    g = [g, {Xk(2)}];
+                else
+                    g = [g, {Xk(1)}];
+                end
+                lbg = [lbg; min(domains.guard_constraint{dom})];
+                ubg = [ubg; max(domains.guard_constraint{dom})];
             else
-                g = [g, {Xk(1)}];
+                % g = [g, {norm(Xk(1:2) - GuardParams.G{3}(1:2)')}];
+                % lbg = [lbg; GuardParams.G{3}(3)];
+                % ubg = [ubg; GuardParams.G{3}(3)];
             end
-            lbg = [lbg; min(domains.guard_constraint{dom})];
-            ubg = [ubg; max(domains.guard_constraint{dom})];
 
             % ---------- Impact Map ---------- %
             if domains.guard_idx(dom) == 1 || domains.guard_idx(dom) == 2
                 impact_result = WallReset(domains.guard_idx(dom), Xk, BallParams, GuardParams);
-                Xk = MX.sym(['X_impact_' num2str(dom)], node_qvp);
+                Xk = MX.sym(['X_impact_' num2str(dom)], node_states);
                 w = [w, {Xk}];
                 lbw = [lbw; -inf*ones(node_states, 1)];
                 ubw = [ubw; inf*ones(node_states, 1)];
                 w0 = [w0; [warm_start.x(:, ws_node_idx)]];
-    
-                g = [g; {Xk - impact_result}];
+
+                te = [te; domains.T(dom)];
+
+                % TODO: Put back
+                g = [g, {Xk - impact_result}];
                 lbg = [lbg; zeros(node_states, 1)];
                 ubg = [ubg; zeros(node_states, 1)];
             end
         end
 
         % ---------- Terminal Constraint ---------- %
-        if dom == domains.num && k == domains.nodes(dom)
+        if dom == domains.num
         end
 
         ws_node_idx = ws_node_idx + 1;
@@ -114,19 +161,63 @@ sol = solver('x0', w0, 'lbx', lbw, 'ubx', ubw,...
 w_opt = full(sol.x);
 cost = full(sol.f);
 
-[x, xe] = ExtractValues(w_opt, robot, swing_params);
-
-% TODO: Fill out return values
-
+[x, u, xe] = ExtractValues(w_opt, domains);
 end
 
-function xkp1 = DiscreteDynamics(x, u, dt, type, BallParams)
-    xkp1 = zeros(length(x), 1);
-    xkp1(1:2) = dt*x(3:4);
-    if type == 1
-        xkp1(3:4) = dt*BallParams.g + min(u, [0;0])/BallParams.M;
-    else
-        xkp1(3:4) = dt*u/BallParams.M;
+%% Conversions
+function [x, u, xe] = ExtractValues(w_opt, domains)
+
+node_states = 4;
+node_inputs = 2;
+
+impact_idx = 1;
+state_idx = 1;
+input_idx = 1;
+opt_idx = 1;
+
+x = zeros(node_states, sum(domains.nodes));
+xe = zeros(node_states, domains.num - 1);
+u = zeros(node_inputs, sum(domains.nodes));
+
+% Initial condition
+x(:, state_idx) = w_opt(opt_idx:node_states);
+state_idx = state_idx + 1;
+opt_idx = opt_idx + node_states;
+
+for dom = 1:domains.num
+    for k = 1:domains.nodes(dom)
+        u(:, input_idx) = w_opt(opt_idx : (opt_idx-1) + node_inputs);
+        input_idx = input_idx + 1;
+        opt_idx = opt_idx + node_inputs;
+
+        x(:, state_idx) = w_opt(opt_idx : (opt_idx-1) + node_states);
+        state_idx = state_idx + 1;
+        opt_idx = opt_idx + node_states;
     end
+
+    if dom ~= domains.num
+        if domains.guard_idx(dom) == 1 || domains.guard_idx(dom) == 2 
+            xe(:, impact_idx) = w_opt(opt_idx : (opt_idx-1) + node_states);
+            impact_idx = impact_idx + 1;
+            opt_idx = opt_idx + node_states;
+        end
+    end
+end
+
+if opt_idx <= length(w_opt)
+    error("did not extract values properly")
+end
+end
+
+%% Dynamics
+function xkp1 = DiscreteDynamics(x, u, dt, type, BallParams)
+    poskp1 = x(3:4);
+    if type == 1
+        velkp1 = BallParams.drag*(dot(x(3:4), x(3:4)))*x(3:4) + BallParams.g + u/BallParams.M;
+    else
+        velkp1 = BallParams.drag*(dot(x(3:4), x(3:4)))*x(3:4) + u/BallParams.M;
+    end
+
+    xkp1 = x + dt*[poskp1; velkp1];
 end
 

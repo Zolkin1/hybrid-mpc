@@ -8,12 +8,12 @@ costfcn = @(xsample) CostFunction(xsample, x0, T, BallParams, GuardParams, CostP
 % Call CEMOptimization
 ntime_steps = T*15;
 
-cem_settings.nsamples = 50; %75; %120;
+cem_settings.nsamples = 15; %120;
 cem_settings.xsize = 2*ntime_steps;
 cem_settings.var = 250*eye(cem_settings.xsize); % 0.125
-cem_settings.mean = -20*ones(cem_settings.xsize, 1);
-cem_settings.nelite = 1; % 3
-cem_settings.max_iters = 15; %15;
+cem_settings.mean = -2*ones(cem_settings.xsize, 1);
+cem_settings.nelite = 3;
+cem_settings.max_iters = 5; %15;
 
 [cemean, cevar, yopt] = CrossEntropyOptimization(cem_settings, costfcn);
 

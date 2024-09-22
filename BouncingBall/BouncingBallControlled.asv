@@ -20,31 +20,28 @@ GuardParams.num = 3;
 GuardParams.G{1} = [0, 0; 8, 0]; % Wall on the x axis
 GuardParams.G{2} = [0, 0; 0, 8]; % Wall on the y axis
 GuardParams.G{3} = [3, 3, 1]; % x, y, radius
-% GuardParams.G{3} = [4, 2; 6, 2];
-% GuardParams.G{4} = [4, 2; 4, 4];
-% GuardParams.G{5} = [6, 2; 6, 4];
-% GuardParams.G{6} = [4, 4; 6, 4];
 
 GuardParams.Color(1) = "k";
 GuardParams.Color(2) = "k";
 GuardParams.Color(3) = "b";
-% GuardParams.Color(4) = "b";
-% GuardParams.Color(5) = "b";
-% GuardParams.Color(6) = "b";
 
 GuardParams.Direction{1} = [-1, 2, 0, 8]; % inc.dec value, x/y constraint, start value, end value
 GuardParams.Direction{2} = [-1, 1, 0, 8];
 GuardParams.Direction{3} = [0, 1, 2, 4];
-% GuardParams.Direction{4} = [0, 2, 4, 6];
-% GuardParams.Direction{5} = [0, 2, 4, 6];
-% GuardParams.Direction{6} = [0, 1, 2, 4];
 
 GuardParams.Value(1) = 0;
 GuardParams.Value(2) = 0;
 GuardParams.Value(3) = 2;
-% GuardParams.Value(4) = 4;
-% GuardParams.Value(5) = 6;
-% GuardParams.Value(6) = 4;
+
+%% Cost Parameters
+CostParams.position_target = [3; 3];
+CostParams.position_weight = [50; 50];
+CostParams.velocity_target = [0; 0];
+CostParams.velocity_weight = 0.001*[1; 1];
+CostParams.u_target = [0; 0];
+CostParams.u_weight = 0.001*[1; 1];
+
+costfcn = @(x, u, dt) BallStageCost(x, u, dt, CostParams);
 
 %%
 t0 = 0;
@@ -52,17 +49,19 @@ tf = 5;
 
 controller.Compute = @(t, x) ZeroController();
 
+mpc_dt = 0.1;
+
 %x0_og = [3; 6; 0; 0];
 x0_og = [1; 1; 0; 0];
 x0 = x0_og;
-%% CEM
-CostParams.position_target = [3; 3];
-CostParams.position_weight = [50; 50];
-CostParams.velocity_target = [0; 0];
-CostParams.velocity_weight = 0.001*[1; 1];
-CostParams.u_target = [0; 0];
 
-CostParams.u_weight = 0.001*[1; 1];
+%% Control loop simulation
+% Simulate
+tsim = t0;
+mpc_sol = [];
+x0 = x0_og;
+
+% Compute CEM
 cem_controller = CreateCEMControllerBall(tf - t0, x0, BallParams, GuardParams, CostParams);
 
 % Simulate CEM
@@ -75,44 +74,90 @@ while tsim < tf
     tsim = cem_sol(end).x(end);
 end
 
-%% MPC
-x0 = x0_og;
+%AnimateBall(cem_sol, BallParams, GuardParams);
+
 domains = ExtractDomainInfo(x0, (tf-t0), cem_controller, BallParams, GuardParams);
 domains
+terminal = false;
+for dom = 1:length(domains.guard_idx)
+    if domains.guard_idx(end) == 3
+        terminal = true;
+        error("CEM did not find the terminal constraint");
+    end
+end
 
-costfcn = @(x, u, dt) BallStageCost(x, u, dt, CostParams);
+if terminal
+end
 
 warmstart = CreateWarmstart(cem_sol, cem_controller, domains);
 
-[tmpc, xmpc, umpc, te, xe] = BouncingBallMPC(domains, costfcn, x0, warmstart, BallParams, GuardParams);
-
-% Create MPC controller
-
-mpc_controller.Compute = @(t, x) MpcController(t, x, umpc, tmpc);
-
-% MPC
 tsim = t0;
 mpc_sol = [];
 x0 = x0_og;
 while tsim < tf
-    mpc_sol = [mpc_sol, BallSimulation(tsim, tf, x0, mpc_controller, BallParams, GuardParams)];
-    x0 = ResetMap(mpc_sol(end), BallParams, GuardParams);
+    % TODO: Update warm start
+
+    % Compute MPC
+    [tmpc, xmpc, umpc, te, xe] = BouncingBallMPC(domains, costfcn, x0, warmstart, BallParams, GuardParams);
+    
+    % Create MPC controller
+    mpc_controller.Compute = @(t, x) MpcController(t, x, umpc, tmpc);
+
+    % Simulate
+    mpc_sol = [mpc_sol, BallSimulation(tsim, min(tf, tsim + mpc_dt), x0, mpc_controller, BallParams, GuardParams)];
+    x0 = mpc_sol(end).y(:, end);
+    if ~isempty(mpc_sol(end).ie)
+        x0 = ResetMap(mpc_sol(end), BallParams, GuardParams);
+
+        % Compute CEM
+        cem_controller = CreateCEMControllerBall(tf - t0, x0, BallParams, GuardParams, CostParams);
+
+        domains = ExtractDomainInfo(x0, (tf-t0), cem_controller, BallParams, GuardParams);
+        domains
+        if domains.guard_idx(end) ~= 3
+            error("CEM did not find the terminal constraint");
+        end
+    else
+        if domains.T(1) > mpc_dt
+            domains.T(1) = domains.T(1) - mpc_dt;
+        else
+            diff = 0;
+            while domains.T(1) < mpc_dt
+                diff = mpc_dt - domains.T(1);
+                domains.T(1) = [];
+                domains.type(1) = [];
+                domains.guard_idx(1) = [];
+                domains.variable(1) = [];
+                domains.guard_constraint(1) = [];
+                domains.guard_val(1) = [];
+                domains.nodes(1) = [];
+            end
+
+            domains.T(1) = domains.T(1) - diff;
+        end
+        domains.T(end) = domains.T(end) + mpc_dt;
+    end
     tsim = mpc_sol(end).x(end);
 end
+
+% Compute MPC
+
+% Compute CEM if a contact is detected
+
 
 %% Plot
 % CEM
 %AnimateBall(cem_sol, BallParams, GuardParams);
 
 % MPC
-%AnimateBall(mpc_sol, BallParams, GuardParams);
+AnimateBall(mpc_sol, BallParams, GuardParams);
 
-PlotMPCSolutionAndSim(tmpc, xmpc, umpc, mpc_sol);
+%PlotMPCSolutionAndSim(tmpc, xmpc, umpc, mpc_sol);
 %domains
 %AnimateMPC(tmpc, xmpc, BallParams, GuardParams);
 
 % Both
-AnimateTwoBalls(mpc_sol, cem_sol, BallParams, GuardParams);
+%AnimateTwoBalls(mpc_sol, cem_sol, BallParams, GuardParams);
 
 %% Controller Functions
 function u = ZeroController()

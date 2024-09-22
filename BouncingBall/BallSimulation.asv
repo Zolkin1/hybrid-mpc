@@ -34,9 +34,8 @@ function [value, isterminal, direction] = GuardConditions(t, x, BallParams, Guar
                 end
             end
         else
-            direction(i) = -1;
-            value(i) = norm(x(1:2) - GuardParams.G{3}(1:2)) - GuardParams.G{3}(3);
-            value(i);
+            direction(i) = 0;
+            value(i) = norm(x(1:2) - GuardParams.G{3}(1:2))
         end
 
         direction(i) = GuardParams.Direction{i}(1);
