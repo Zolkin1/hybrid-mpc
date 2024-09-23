@@ -1,7 +1,7 @@
 function [xmean, xvar, yopt] = CrossEntropyOptimization(cem_settings, costfcn)
 %CROSSENTROPYOPTIMIZATION Uses CEM to optimize
 %  
-tic
+%tic
 nsamples = cem_settings.nsamples;
 xvar = cem_settings.var;
 xmean = cem_settings.mean;
@@ -58,7 +58,7 @@ for n = 1:cem_settings.max_iters
 end
 
 yopt = costfcn(xmean);
-toc
+%toc
 
 end
 

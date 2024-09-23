@@ -2,7 +2,8 @@ clc;
 clear;
 close all;
 
-% TODO: Consider adding gravity back in the box
+% TODO:
+% - 
 
 %%
 BallParams.M = 1;
@@ -11,7 +12,7 @@ BallParams.g = [0; -9.81];
 BallParams.gamma = [1; 1]; % 0.8
 BallParams.drag = -0.02;
 
-BallParams.ForceLim = [100; 100];
+BallParams.ForceLim = [100; 100]; % [200; 200]
 
 pos0 = [1, 1];
 
@@ -41,7 +42,7 @@ CostParams.velocity_weight = 0.001*[1; 1];
 CostParams.u_target = [0; 0];
 CostParams.u_weight = 0.001*[1; 1];
 
-costfcn = @(x, u, dt) BallStageCost(x, u, dt, CostParams);
+costfcn = @(x, u, dt, mode_type) BallStageCost(x, u, dt, mode_type, CostParams);
 
 %%
 t0 = 0;
@@ -49,7 +50,7 @@ tf = 3; %5;
 
 controller.Compute = @(t, x) ZeroController();
 
-mpc_dt = 0.1;
+mpc_dt = 0.01;
 
 %x0_og = [3; 6; 0; 0];
 x0_og = [1; 1; 0; 0];
@@ -94,11 +95,12 @@ warmstart = CreateWarmstart(cem_sol, cem_controller_start, domains_start);
 
 
 rng("default");
-num_sims = 10;
+num_sims = 10; %10;
 for i = 1:num_sims
     % Generate all the disturbance sequences
     dist_dt = 0.05;
-    w_mag = [5; 5];
+    %w_mag = [5; 5];
+    w_mag = [20; 20];
     tw = t0:dist_dt:tf;
     w_seq{i} = zeros(2, length(tw));
     w_seq{i}(1,:) = 2*w_mag(1)*(rand(1, length(tw)) - 0.5);
@@ -107,24 +109,34 @@ for i = 1:num_sims
     %w = @(t) zeros(2,1);
 end
 
+if num_sims == 0
+    w_mag = [0; 0];
+end
 w{num_sims + 1} = @(t) zeros(2,1);
 
 paths = figure;
- 
+sucesses = 0;
+tic
 for i = 1:num_sims + 1
     tsim = t0;
     mpc_sol = [];
     x0 = x0_og;
-    mpc_sim = figure();
-    tiledlayout(2, 3);
+    %mpc_sim = figure();
+    %tiledlayout(2, 3);
     domains = domains_start;
     warmstart = CreateWarmstart(cem_sol, cem_controller_start, domains_start);
+    w_opt = [];
     while tsim < tf
         % TODO: Update warm start
     
         % Compute MPC
-        [tmpc, xmpc, umpc, te, xe] = BouncingBallMPC(domains, costfcn, x0, warmstart, BallParams, GuardParams);
+        w_opt = [];
+        [tmpc, xmpc, umpc, te, xe, domT, w_opt] = BouncingBallMPC(domains, costfcn, x0, warmstart, BallParams, GuardParams, w_opt);
         
+        % for d = 1:domains.num
+        %     domains.T(d) = domT(d);
+        % end
+
         % Create MPC controller
         mpc_controller.Compute = @(t, x) MpcController(t, x, umpc, tmpc + tsim);
     
@@ -134,8 +146,8 @@ for i = 1:num_sims + 1
             min(tf, tsim + mpc_dt), x0, mpc_controller, BallParams,...
             GuardParams, w{i})];
     
-        figure(mpc_sim);
-        PlotSimAndTraj(mpc_sol(end), tmpc, xmpc, umpc);
+        %figure(mpc_sim);
+        %PlotSimAndTraj(mpc_sol(end), tmpc, xmpc, umpc);
     
         x0 = mpc_sol(end).y(:, end);
         if ~isempty(mpc_sol(end).ie) && mpc_sol(end).ie(1) ~= 3
@@ -162,15 +174,28 @@ for i = 1:num_sims + 1
             end
         else
             nodes_per_sec = 60;
-            if domains.T(1) > mpc_dt
-                domains.T(1) = domains.T(1) - mpc_dt;
-                domains.nodes(1) = domains.nodes(1) - ceil(nodes_per_sec*mpc_dt);
-                domains.nodes(end) = domains.nodes(end) + ceil(nodes_per_sec*mpc_dt);
+            elapsed_time = mpc_sol(end).x(end) - mpc_sol(end).x(1);
+            if domains.T(1) > elapsed_time
+                domains.T(1) = domains.T(1) - elapsed_time;
+                domains.nodes(1) = domains.nodes(1) - floor(nodes_per_sec*elapsed_time);
+                domains.nodes(end) = domains.nodes(end) + floor(nodes_per_sec*elapsed_time);
+
+                if domains.nodes(1) <= 0
+                    error("Negative or no node domain!");
+                end
+
+                % if sum(domains.T) ~= tf
+                %     error("Domains lost or gained time");
+                % end
             else
                 diff = 0;
-                while domains.T(1) < mpc_dt
-                    diff = mpc_dt - domains.T(1);
+                t_count = domains.T(1);
+                removed_time = 0;
+                while t_count < elapsed_time
+                    removed_time = removed_time + domains.T(1);
+                    diff = elapsed_time - domains.T(1);
                     domains.T(1) = [];
+                    t_count = t_count + domains.T(1);
                     domains.type(1) = [];
                     domains.guard_idx(1) = [];
                     if length(domains.variable) > 1
@@ -183,18 +208,34 @@ for i = 1:num_sims + 1
                     domains.num = domains.num - 1;
                 end
                 
-                node_count = node_count + ceil(diff*nodes_per_sec);
-                domains.T(1) = domains.T(1) - diff;
-                domains.nodes(1) = domains.nodes(1) - ceil(diff*nodes_per_sec);
+                node_count = node_count + floor(diff*nodes_per_sec);
+                domains.T(1) = domains.T(1) - (elapsed_time - removed_time);
+                domains.nodes(1) = domains.nodes(1) - floor(diff*nodes_per_sec);
                 domains.nodes(end) = domains.nodes(end) + node_count;
+
+                if domains.nodes(1) <= 0
+                    error("Negative or no node domain!");
+                end
+
+                % if sum(domains.T) ~= tf
+                %     error("Domains lost or gained time");
+                % end
             end
-            domains.T(end) = domains.T(end) + mpc_dt;
-            TODO: VERIFY nodes are always integer!
+            domains.T(end) = domains.T(end) + elapsed_time;
+
+            if abs(sum(domains.T) - tf) > 1e-4
+                error("Domains lost or gained time");
+            end
+
+            if sum(domains.nodes) ~= floor(sum(domains.nodes))
+                error("Nodes non integer!");
+            end
+
         end
         tsim = mpc_sol(end).x(end);
     end
     
-    tsim_plot = linspace(mpc_sol(1).x(1), mpc_sol(end).x(end), 200);
+    tsim_plot = linspace(mpc_sol(1).x(1), mpc_sol(end).x(end), 400);
     sim_pos = zeros(2, length(tsim_plot));
     for j = 1:length(tsim_plot)
         x_plot = GetState(mpc_sol, tsim_plot(j));
@@ -207,15 +248,23 @@ for i = 1:num_sims + 1
     else
         plot(sim_pos(1, :), sim_pos(2, :), "LineWidth", 2, "Color", [0.8500 0.3250 0.0980]);
     end
+    scatter(x0_og(1), x0_og(2), "magenta", "filled");
+    scatter(sim_pos(1, end), sim_pos(2, end), "magenta", "filled");
+    if norm(sim_pos(1:2, end) - GuardParams.G{3}(1:2)) <= GuardParams.G{3}(3)
+        sucesses = sucesses + 1;
+    end
     hold off;
 end
+toc
+disp(['Success: ', num2str(sucesses), ' simulations: ', num2str(num_sims + 1)]);
+w_mag
 
 %% Plot
 % CEM
 %AnimateBall(cem_sol, BallParams, GuardParams);
 
 % MPC
-AnimateBall(mpc_sol, BallParams, GuardParams);
+%AnimateBall(mpc_sol, BallParams, GuardParams);
 
 %PlotMPCSolutionAndSim(tmpc, xmpc, umpc, mpc_sol);
 %domains

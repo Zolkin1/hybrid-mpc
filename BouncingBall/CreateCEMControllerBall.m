@@ -76,7 +76,7 @@ function cost = SimCost(sol, xsample, CostParams)
             u(1) = interp1(tsample, ux, t(t_idx));
             u(2) = interp1(tsample, uy, t(t_idx));
 
-            cost = cost + BallStageCost(deval(sol(j), t(t_idx)), u, dt, CostParams);
+            cost = cost + BallStageCost(deval(sol(j), t(t_idx)), u, dt, 2, CostParams);
             t_idx = t_idx + 1;
         end
     end

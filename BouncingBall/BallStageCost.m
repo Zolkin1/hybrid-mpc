@@ -1,6 +1,9 @@
-function cost = BallStageCost(x, u, dt, CostParams)
+function cost = BallStageCost(x, u, dt, mode_type, CostParams)
     cost = 0;
     cost = cost + PositionCost(x, CostParams);
+    % if mode_type == 1
+    %     cost = cost * 0.001;
+    % end
     cost = cost + VelocityCost(x, CostParams);
     cost = cost + InputCost(u, CostParams);
     cost = cost*dt;

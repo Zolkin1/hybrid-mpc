@@ -1,4 +1,4 @@
-function [t, x, u, te, xe] = BouncingBallMPC(domains, costfcn, x0, warm_start, BallParams, GuardParams)
+function [t, x, u, te, xe, domTout, w_opt] = BouncingBallMPC(domains, costfcn, x0, warm_start, BallParams, GuardParams, w_opt_ws)
 %BOUNCINGBALLMPC 
 %   
 
@@ -39,6 +39,12 @@ var_idx = 1;
 ws_node_idx = 1;
 
 for dom = 1:domains.num
+    domT = MX.sym(['T_', num2str(dom)], 1);
+    w = {w{:}, domT};
+    lbw = [lbw; domains.T(dom)]; %max(domains.T(dom) - 0.25, min(domains.T(dom), 0.1))];
+    ubw = [ubw; domains.T(dom)]; %domains.T(dom) + 0.25];
+    w0 = [w0; domains.T(dom)];
+    %dt = domT/domains.nodes(dom);
     dt = domains.T(dom)/domains.nodes(dom);
     for k = 1:domains.nodes(dom)
         % New NLP variable for the control
@@ -58,7 +64,7 @@ for dom = 1:domains.num
         Xk_end = DiscreteDynamics(Xk, Uk, dt, domains.type(dom), BallParams);
 
         % ---------- Cost Function ---------- %
-        J = J + costfcn(Xk_end, Uk, dt);
+        J = J + costfcn(Xk_end, Uk, dt, domains.type(dom));
 
         % New NLP variable for state at end of interval
         Xk = MX.sym(['X_' num2str(var_idx)], node_states);
@@ -88,18 +94,18 @@ for dom = 1:domains.num
         %     lbg = [lbg; BallParams.r];
         %     ubg = [ubg; inf];
         % end
-
-        if dom ~= domains.num && ~domains.guard_idx(dom) == 3
-            g = [g, {norm(Xk(1:2) - GuardParams.G{3}(1:2)')}];
-            lbg = [lbg; GuardParams.G{3}(3)];
+        
+        if dom ~= domains.num && domains.guard_idx(dom) ~= 3
+            g = [g, {dot(Xk(1:2) - GuardParams.G{3}(1:2)', Xk(1:2) - GuardParams.G{3}(1:2)')}];
+            lbg = [lbg; GuardParams.G{3}(3)^2 + 0.05];
             ubg = [ubg; inf];
         end
 
-        % if domains.type(dom) == 2
-        %     g = [g, {dot(Xk(1:2) - GuardParams.G{3}(1:2)', Xk(1:2) - GuardParams.G{3}(1:2)')}];
-        %     lbg = [lbg; -1];
-        %     ubg = [ubg; GuardParams.G{3}(3)^2];
-        % end
+        if domains.type(dom) == 2
+            g = [g, {dot(Xk(1:2) - GuardParams.G{3}(1:2)', Xk(1:2) - GuardParams.G{3}(1:2)')}];
+            lbg = [lbg; -1];
+            ubg = [ubg; GuardParams.G{3}(3)^2];
+        end
 
         if dom ~= domains.num && k == domains.nodes(dom)
             % g = [g, {[Xk(1); Xk(2)]}];
@@ -108,9 +114,9 @@ for dom = 1:domains.num
             % ---------- Guard Constraints ---------- %
             if domains.guard_idx(dom) == 1 || domains.guard_idx(dom) == 2
                 g = [g, {Xk(domains.variable(dom)) - BallParams.r - domains.guard_val(dom)}];
-                lbg = [lbg; 0];
-                ubg = [ubg; 0];
-    
+                lbg = [lbg; -0.05];
+                ubg = [ubg; 0.05];
+
                 if domains.variable(dom) == 1
                     g = [g, {Xk(2)}];
                 else
@@ -119,9 +125,9 @@ for dom = 1:domains.num
                 lbg = [lbg; min(domains.guard_constraint{dom})];
                 ubg = [ubg; max(domains.guard_constraint{dom})];
             else
-                % g = [g, {norm(Xk(1:2) - GuardParams.G{3}(1:2)')}];
-                % lbg = [lbg; GuardParams.G{3}(3)];
-                % ubg = [ubg; GuardParams.G{3}(3)];
+                g = [g, {dot(Xk(1:2) - GuardParams.G{3}(1:2)', Xk(1:2) - GuardParams.G{3}(1:2)')}];
+                lbg = [lbg; -1]; %GuardParams.G{3}(3)^2];
+                ubg = [ubg; GuardParams.G{3}(3)^2 - 0.1]; % TODO: Can tune this number
             end
 
             % ---------- Impact Map ---------- %
@@ -151,6 +157,11 @@ for dom = 1:domains.num
     end 
 end
 
+if length(w_opt_ws) == length(w0)
+    disp("--- Using w_opt_ws ---");
+    w0 = w_opt_ws;
+end
+
 % Create an NLP solver
 prob = struct('f', J, 'x', vertcat(w{:}), 'g', vertcat(g{:}));
 solver = nlpsol('solver', 'ipopt', prob);
@@ -161,11 +172,20 @@ sol = solver('x0', w0, 'lbx', lbw, 'ubx', ubw,...
 w_opt = full(sol.x);
 cost = full(sol.f);
 
-[x, u, xe] = ExtractValues(w_opt, domains);
+[dt, x, u, xe] = ExtractValues(w_opt, domains);
+
+% for dom =  1:domains.num
+%     for k = 1:domains.nodes(dom)
+%         t = [t; t(end) + dt(dom)/domains.nodes(dom)];
+%     end
+% end
+
+domTout = 0; %dt;
+
 end
 
 %% Conversions
-function [x, u, xe] = ExtractValues(w_opt, domains)
+function [dt, x, u, xe] = ExtractValues(w_opt, domains)
 
 node_states = 4;
 node_inputs = 2;
@@ -178,6 +198,7 @@ opt_idx = 1;
 x = zeros(node_states, sum(domains.nodes));
 xe = zeros(node_states, domains.num - 1);
 u = zeros(node_inputs, sum(domains.nodes));
+dt = zeros(1, domains.num);
 
 % Initial condition
 x(:, state_idx) = w_opt(opt_idx:node_states);
@@ -185,6 +206,8 @@ state_idx = state_idx + 1;
 opt_idx = opt_idx + node_states;
 
 for dom = 1:domains.num
+    dt(dom) = w_opt(opt_idx);
+    opt_idx = opt_idx + 1;
     for k = 1:domains.nodes(dom)
         u(:, input_idx) = w_opt(opt_idx : (opt_idx-1) + node_inputs);
         input_idx = input_idx + 1;
