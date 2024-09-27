@@ -92,7 +92,7 @@
 % BallParams.ForceLim = [100; 100];
 %     dist_dt = 0.05;
 %
-% w_20_20_sims_positions_100mpc:
+% w_20_20_sims_positions_100mpc_nohybrid:
 % Success: 10 simulations: 11
 % 
 % w_mag =
@@ -103,4 +103,75 @@
 % adaptive mode schedule
 % BallParams.ForceLim = [100; 100];
 %     dist_dt = 0.05;
-
+%
+% w_5_5_sims_positions_100mpc_nohybrd:
+% Success: 11 simulations: 11
+% 
+% w_mag =
+% 
+%     5
+%     5
+% mpc_dt = 0.01
+% fixed mode schedule
+% BallParams.ForceLim = [100; 100];
+%     dist_dt = 0.05;
+%
+% w_20_20_sims_positions_10mpc_nohybrid:
+% Success: 8 simulations: 11
+% 
+% w_mag =
+% 
+%     20
+%     20
+% mpc_dt = 0.1
+% fixed mode schedule
+% BallParams.ForceLim = [100; 100];
+%     dist_dt = 0.05;
+%
+% w_20_20_sims_positions_100mpc_nohybrd:
+% Success: 2 simulations: 11
+% 
+% w_mag =
+% 
+%     20
+%     20
+% mpc_dt = 0.01
+% fixed mode schedule
+% BallParams.ForceLim = [100; 100];
+%     dist_dt = 0.05;
+%
+% w_10_10_sims_positions_10mpc_nohybrd:
+% Success: 9 simulations: 11
+% 
+% w_mag =
+% 
+%     10
+%     10
+% mpc_dt = 0.01
+% fixed mode schedule
+% BallParams.ForceLim = [100; 100];
+%     dist_dt = 0.05;
+%
+% w_10_10_sims_positions_100mpc_nohybrd:
+% Success: 4 simulations: 11
+% 
+% w_mag =
+% 
+%     10
+%     10
+% mpc_dt = 0.01
+% fixed mode schedule
+% BallParams.ForceLim = [100; 100];
+%     dist_dt = 0.05;
+%
+% w_10_10_sims_positions_20mpc_nohybrd:
+% Success: 11 simulations: 11
+% 
+% w_mag =
+% 
+%     10
+%     10
+% mpc_dt = 0.05
+% fixed mode schedule
+% BallParams.ForceLim = [100; 100];
+%     dist_dt = 0.05;

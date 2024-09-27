@@ -2,9 +2,6 @@ clc;
 clear;
 close all;
 
-% TODO:
-% - 
-
 %%
 BallParams.M = 1;
 BallParams.r = 0.1;
@@ -50,7 +47,7 @@ tf = 3; %5;
 
 controller.Compute = @(t, x) ZeroController();
 
-mpc_dt = 0.1;
+mpc_dt = 0.05;
 
 %x0_og = [3; 6; 0; 0];
 x0_og = [1; 1; 0; 0];
@@ -95,12 +92,12 @@ warmstart = CreateWarmstart(cem_sol, cem_controller_start, domains_start);
 
 
 rng("default");
-num_sims = 10; %10;
+num_sims = 10;
 for i = 1:num_sims
     % Generate all the disturbance sequences
     dist_dt = 0.05;
     %w_mag = [5; 5];
-    w_mag = [3; 3];
+    w_mag = [10; 10];
     tw = t0:dist_dt:tf;
     w_seq{i} = zeros(2, length(tw));
     w_seq{i}(1,:) = 2*w_mag(1)*(rand(1, length(tw)) - 0.5);
@@ -150,27 +147,25 @@ for i = 1:num_sims + 1
         %PlotSimAndTraj(mpc_sol(end), tmpc, xmpc, umpc);
     
         x0 = mpc_sol(end).y(:, end);
-        if ~isempty(mpc_sol(end).ie) && mpc_sol(end).ie(1) ~= 3
+        if ~isempty(mpc_sol(end).ie)
             x0 = ResetMap(mpc_sol(end), BallParams, GuardParams);
-    
-            % Compute CEM
-            cem_controller_new = CreateCEMControllerBall(tf - t0, x0, BallParams, GuardParams, CostParams);
 
-            domains_new = ExtractDomainInfo(x0, (tf-t0), cem_controller_new, BallParams, GuardParams);
-            domains_new
+            if length(domains.guard_idx) >= 1 && domains.guard_idx(1) ~= 3
+                domains.T(end) = domains.T(end) + domains.T(1);
+                domains.nodes(end) = domains.nodes(end) + domains.nodes(1);
 
-            terminal = false;
-            for dom = 1:length(domains_new.guard_idx)
-                if domains_new.guard_idx(dom) == 3
-                    terminal = true;
-                end
+                domains.T(1) = [];
+                domains.nodes(1) = [];
+                domains.variable(1) = [];
+                domains.guard_constraint(1) = [];
+                domains.guard_val(1) = [];
+                domains.guard_idx(1) = [];
+                domains.num = domains.num - 1;
+                domains.type(1) = [];
             end
 
-            if ~terminal
-                warning("CEM did not find the terminal constraint");
-            else
-                domains = domains_new;
-                warmstart = CreateWarmstart(cem_sol, cem_controller_new, domains_new);
+            if sum(domains.nodes) ~= 184
+                error("Domain node error!");
             end
         else
             nodes_per_sec = 60;
@@ -183,10 +178,6 @@ for i = 1:num_sims + 1
                 if domains.nodes(1) <= 0
                     error("Negative or no node domain!");
                 end
-
-                % if sum(domains.T) ~= tf
-                %     error("Domains lost or gained time");
-                % end
             else
                 diff = 0;
                 t_count = domains.T(1);
@@ -216,10 +207,6 @@ for i = 1:num_sims + 1
                 if domains.nodes(1) <= 0
                     error("Negative or no node domain!");
                 end
-
-                % if sum(domains.T) ~= tf
-                %     error("Domains lost or gained time");
-                % end
             end
             domains.T(end) = domains.T(end) + elapsed_time;
 
@@ -255,6 +242,7 @@ for i = 1:num_sims + 1
     end
     hold off;
 end
+toc
 disp(['Success: ', num2str(sucesses), ' simulations: ', num2str(num_sims + 1)]);
 w_mag
 
