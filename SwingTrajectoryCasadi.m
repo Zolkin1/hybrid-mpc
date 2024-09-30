@@ -1,8 +1,8 @@
 function pos = SwingTrajectoryCasadi(t, node, total_nodes, T0, Tf, x0, xf, apex, height_s, height_f)
 %SWINGTRAJECTORYCASADI Summary of this function goes here
 %   
-apex_time = 0.2*(Tf - T0) + T0;
-apex_node = ceil(0.2*total_nodes);
+apex_time = 0.9*(Tf - T0) + T0; % 0.2
+apex_node = ceil(0.9*total_nodes);
 swing_time = (Tf - T0);
 
 pos = [0*x0;0*x0];
