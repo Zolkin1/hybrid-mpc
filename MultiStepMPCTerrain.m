@@ -1,4 +1,4 @@
-function mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warm_start)
+function mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warm_start, current_ground)
 %MULTISTEPMPC
 %   
 import casadi.*
@@ -160,7 +160,7 @@ for swing = 1:swing_params.num_swings
         
 
         if swing == 1
-            start_height = ground.start_height(swing_params.ground_idx(swing));
+            start_height = ground.start_height(current_ground);
         else
             start_height = ground.start_height(swing_params.ground_idx(swing - 1));
         end
@@ -168,30 +168,44 @@ for swing = 1:swing_params.num_swings
         end_height = ground.end_height(swing_params.ground_idx(swing));
         end_height_stance_frame = end_height - start_height;
 
-        apex_node = ceil(0.75*swing_params.nodes(swing));
+        apex_node = ceil(0.8*swing_params.nodes(swing));
         if k == apex_node
             % Calc apex height
-            apex = max(start_height, end_height_stance_frame) + 0.1 - min(start_height, end_height);
+            apex = max(start_height, end_height_stance_frame) + 0.05 - min(start_height, end_height); % 0.1
 
             fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
             g = [g, {fk_pos(2) - apex}];
             lbg = [lbg; zeros(1,1)];
             ubg = [ubg; zeros(1,1)];
+
+            % Consider removing
+            % Put swing foot over the ground segment
+            stance_pos = GetStancePosition(robot, Xk);
+            ground_bounds = GetGroundBounds(ground, swing_params.ground_idx(swing)); % x position bounds
+            fk_contact_pt = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
+            g = [g, {stance_pos(1) + fk_contact_pt(1)}];
+            lbg = [lbg; ground_bounds(1)];
+            ubg = [ubg; ground_bounds(2)];
+
         elseif k == swing_params.nodes(swing)
             stance_pos = GetStancePosition(robot, Xk);
             ground_bounds = GetGroundBounds(ground, swing_params.ground_idx(swing)); % x position bounds
             fk_contact_pt = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
             g = [g, {stance_pos(1) + fk_contact_pt(1)}];
-            lbg = [lbg; ground_bounds(1) + 0.05];
-            ubg = [ubg; ground_bounds(2) - 0.05];
+            lbg = [lbg; ground_bounds(1) + 0.075];
+            ubg = [ubg; ground_bounds(2) - 0.075];
 
             g = [g, {fk_contact_pt(2)}];
             lbg = [lbg; end_height_stance_frame - 0.005];
             ubg = [ubg; end_height_stance_frame - 0.005];
+
+            % g = [g, {fk_contact_pt(1)}];
+            % lbg = [lbg; -0.5];
+            % ubg = [ubg; 0.5];
         elseif k < swing_params.nodes(swing) - 2 && k > 1
             fk_pos = ForwardKinematicsCasadi(robot, Xk, robot.swing, robot.foot_r);
             g = [g, {fk_pos(2)}];
-            lbg = [lbg; 0.02*ones(1,1)];
+            lbg = [lbg; end_height_stance_frame]; %0.02*ones(1,1)];
             ubg = [ubg; inf*ones(1,1)];
         end
 
@@ -255,7 +269,9 @@ end
 
 % Create an NLP solver
 prob = struct('f', J, 'x', vertcat(w{:}), 'g', vertcat(g{:}));
-solver = nlpsol('solver', 'ipopt', prob);
+options = struct;
+options.ipopt.max_cpu_time = 15;
+solver = nlpsol('solver', 'ipopt', prob, options);
 
 % Solve the NLP
 sol = solver('x0', w0, 'lbx', lbw, 'ubx', ubw,...

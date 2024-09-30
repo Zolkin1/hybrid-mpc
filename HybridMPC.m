@@ -1,0 +1,126 @@
+function [ground_idx, mpc_sol] = HybridMPC(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground)
+%HYBRIDMPC Solves the hybrid problem
+%   
+
+i = 1;
+position_weight = 800000;
+
+% Try with the current ground idx and record the cost
+% solutions{i} = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+% cost{i} = 0.1*solutions{i}.cost - position_weight*(min(1e9, 1/(solutions{i}.pos(1, end) - 2)))^2;
+% ground_eval{i} = swing_params.ground_idx;
+% i = i + 1;
+
+temp_ground_idx = swing_params.ground_idx;
+
+stance_xpos = GetStanceXPos(robot, q0, pos0);
+ground_bounds = GetGroundBounds(ground, current_ground);
+
+if stance_xpos < ground_bounds(1) || stance_xpos > ground_bounds(2)
+    error("Incorrect current ground!");
+end
+
+if current_ground ~= 4
+    
+    valid_ground_idx = [];
+    for j = 1:length(ground.xlength)
+        ground_bounds = GetGroundBounds(ground, j);
+        if min(abs(stance_xpos - ground_bounds(1)), abs(stance_xpos - ground_bounds(2))) < 0.45   % 0.45 is approx max swing length
+            valid_ground_idx(end + 1) = j;
+        end
+    end
+    
+    for j = 1:length(valid_ground_idx)
+        idx_diff = valid_ground_idx(j) - swing_params.ground_idx(1);
+        swing_params.ground_idx = min(swing_params.ground_idx + idx_diff, length(ground.xlength));
+        solutions{i} = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+        cost{i} = -solutions{i}.pos(1, end) + 2; %0.1*solutions{i}.cost - position_weight*max((solutions{i}.pos(1, end) - 2)^2, abs(1/(solutions{i}.pos(1, end) - 2)));
+        ground_eval{i} = swing_params.ground_idx;
+        swing_params.ground_idx = temp_ground_idx;
+        i = i + 1;
+    end
+    
+    % Use simple heuristics for the ground idx 
+    % if swing_params.ground_idx(1) == current_ground
+    %     swing_params.ground_idx = min(swing_params.ground_idx + 1, length(ground.xlength));
+    %     solutions{i} = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+    %     cost{i} = 0.1*solutions{i}.cost - position_weight*max((solutions{i}.pos(1, end) - 2)^2, abs(1/(solutions{i}.pos(1, end) - 2)));
+    %     ground_eval{i} = swing_params.ground_idx;
+    %     swing_params.ground_idx = temp_ground_idx;
+    %     i = i + 1;
+    % 
+    %     swing_params.ground_idx = min(swing_params.ground_idx + 2, length(ground.xlength));
+    %     solutions{i} = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+    %     cost{i} = 0.1*solutions{i}.cost - position_weight*max((solutions{i}.pos(1, end) - 2)^2, abs(1/(solutions{i}.pos(1, end) - 2)));
+    %     ground_eval{i} = swing_params.ground_idx;
+    %     swing_params.ground_idx = temp_ground_idx;
+    %     i = i + 1;
+    % 
+    %     % if current_ground > 1
+    %     %     swing_params.ground_idx = swing_params.ground_idx - 1;
+    %     %     mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart);
+    %     %     cost{i} = mpc_sol.cost;
+    %     %     ground_eval{i} = swing_params.ground_idx;
+    %     %     swing_params.ground_idx = swing_params.ground_idx - 1;
+    %     %     i = i + 1;
+    %     % end
+    % elseif swing_params.ground_idx(1) == current_ground - 1
+    %     swing_params.ground_idx = min(swing_params.ground_idx + 1, length(ground.xlength));
+    %     solutions{i} = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+    %     cost{i} = 0.1*solutions{i}.cost - position_weight*max((solutions{i}.pos(1, end) - 2)^2, abs(1/(solutions{i}.pos(1, end) - 2)));
+    %     ground_eval{i} = swing_params.ground_idx;
+    %     swing_params.ground_idx = temp_ground_idx;
+    %     i = i + 1;
+    % elseif swing_params.ground_idx(1) == current_ground + 1
+    %     swing_params.ground_idx = swing_params.ground_idx - 1;
+    %     solutions{i} = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+    %     cost{i} = 0.1*solutions{i}.cost - position_weight*max((solutions{i}.pos(1, end) - 2)^2, abs(1/(solutions{i}.pos(1, end) - 2)));
+    %     ground_eval{i} = swing_params.ground_idx;
+    %     swing_params.ground_idx = temp_ground_idx;
+    %     i = i + 1;
+    % 
+    %     swing_params.ground_idx = min(swing_params.ground_idx + 2, length(ground.xlength));
+    %     solutions{i} = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+    %     cost{i} = 0.1*solutions{i}.cost - position_weight*max((solutions{i}.pos(1, end) - 2)^2, abs(1/(solutions{i}.pos(1, end) - 2)));
+    %     ground_eval{i} = swing_params.ground_idx;
+    %     swing_params.ground_idx = temp_ground_idx;
+    %     i = i + 1;
+    % end
+    
+    
+    cost_min = inf;
+    min_idx = -1;
+    for j = 1:length(cost)
+        if cost{j} < cost_min
+            min_idx = j;
+            cost_min = cost{j};
+        end
+    end
+    
+    ground_idx = ground_eval{min_idx};
+    mpc_sol = solutions{min_idx};
+    
+    valid_ground_idx
+    min_idx
+    cost
+else
+    ground_idx = 4*ones(4);
+    mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+end
+end
+
+function xpos = GetStanceXPos(robot, q, pos)
+    pos_diff = pos - ForwardKinematics(robot, q, 0*q, 3, [0; 0]);
+    xpos = pos_diff(1);
+end
+
+function ground_bounds = GetGroundBounds(ground, idx)
+    ground_lb = 0;
+    for i = 1:idx-1
+        ground_lb = ground_lb + ground.xlength(i);
+    end
+
+    ground_ub = ground_lb + ground.xlength(idx);
+    ground_bounds = [ground_lb, ground_ub];
+end
+

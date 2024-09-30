@@ -15,9 +15,9 @@ pos0 = robot.torso_pos;
 t0 = 0;
 
 %% Ground description
-ground.xlength = [.4, .5, .5, 1.5];
-ground.start_height = [0, 0.075, 0.125, 0.15];
-ground.end_height = [0, 0.075 0.125, 0.15];
+ground.xlength = [.4, 1, .2, 1.25]; %[.4, .75, .2, 1.5];
+ground.start_height = [0, 0.075, 0.125, 0.175];
+ground.end_height = [0, 0.075 0.125, 0.175];
 
 %% Long Horizon MPC
 swing_params.apex = 0.1;
@@ -27,17 +27,17 @@ swing_params.start_pos = ForwardKinematics(robot, q0, v0, robot.swing, robot.foo
 swing_params.time_into_swing = 0.0;
 swing_params.no_swing_constraint = swing_params.num_swings + 1;
 swing_params.ground_idx = [1 2 2 3 3 4 4]; %ones(swing_params.num_swings, 1);
-swing_params.tf = 0.3;
+swing_params.tf = 0.3; %0.3;
 
 cost_params.pose_target = [0.; 1.5; 0.2; 0.8; -0.4];
-cost_params.pose_weight = [8000, 5, 5, 5, 5]';
+cost_params.pose_weight = [8000, 5, 5, 5, 5]'; % This 8000 is very helpful
 %cost_params.pose_weight = [1000; 1000; 1000; 1000; 1000];
 
 cost_params.vel_target = [0, 0, 0, 0, 0]';
 cost_params.vel_weight = 0*[5., 25., 25., 25., 5.]';
 
 cost_params.pos_target = [2, 0.8]';
-cost_params.pos_weight = [3000, 1000]';
+cost_params.pos_weight = [3000, 100]'; %[3000, 1000]';
 
 cost_params.u_target = [0, 0, 0, 0, 0]';
 cost_params.u_weight = [10, 10, 10, 10, 10]';
@@ -75,8 +75,9 @@ end
 % the initial state of the swing, then fix the terrain and solve, then do
 % this again. (?) Is this really what I want - probably simple and will
 % work, so lets do that.
-
-mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart);
+current_ground = 1;
+[swing_params.ground_idx, mpc_sol] = HybridMPC(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+%mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
 
 mpc_plot = figure;
 PlotMPCSol(robot, ground, mpc_sol, mpc_plot);
@@ -108,7 +109,7 @@ controller = CreateController(mpc_sol);
 options = odeset('Events', @(t,y)GroundContact(t,y,robot,ground),'Refine',8);
 global last_contact_time;
 y0 = [q0; v0; ForwardKinematics(robot, q0, v0, 3, [0;0])];
-tf = 1; %1.5; %2.5; %t(end); % 3
+tf = 2.5; %1.5; %2.5; %t(end); % 3
 
 tesim = [];
 qesim = [];
@@ -153,11 +154,15 @@ while t0 < tf
         q0 = y0(1:robot.nq);
         v0 = y0(robot.nq + 1:robot.nq + robot.nv);
         pos0 = y0(11:12);
+        
+        current_ground = swing_params.ground_idx(1);
         swing_params.ground_idx(1) = [];
         swing_params.ground_idx(end + 1) = swing_params.ground_idx(end);
         swing_params.time_into_swing = 0;
+        [swing_params.ground_idx, mpc_sol] = HybridMPC(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
+
         % TODO: Warmstart the MPC
-        mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart);
+        %mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
         PlotMPCSol(robot, ground, mpc_sol, mpc_plot);
 
         mpc_sol.t = mpc_sol.t + t0;
@@ -185,7 +190,9 @@ while t0 < tf
                 swing_params.time_into_swing = sol.x(end);
             end
             % TODO: Warmstart the MPC
-            mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart);
+            %current_ground = swing_params.ground_idx(1);
+            current_ground = GetCurrentGround(robot, q0, pos0, ground);
+            mpc_sol = MultiStepMPCTerrain(robot, q0, v0, pos0, swing_params, ground, costfcn, warmstart, current_ground);
 
             mpc_sol.t = mpc_sol.t + t0;
             mpc_sol.te = mpc_sol.te + t0;
@@ -199,6 +206,7 @@ while t0 < tf
         possim = [possim, sol.y(11:12, :)];
     end
 
+    swing_params.ground_idx
     tsim(end)
     tesim
 end
@@ -245,9 +253,9 @@ function tau = MpcController(tc, qc, vc, controller)
 end
 
 function controller = CreateController(mpc_sol)
-    controller.p = 1*[7000; 7000; 7000; 7000; 7000];
-    controller.d = 1*[100; 100; 100; 100; 100];
-    controller.saturation = [30000 30000 30000 30000 30000];
+    controller.p = 0.1*[7000; 7000; 7000; 7000; 7000];
+    controller.d = 0.1*[100; 100; 100; 100; 100];
+    controller.saturation = 10*[300 300 300 300 300];
     
     % Drive to the next impact only
     te = mpc_sol.te(1);
@@ -410,8 +418,8 @@ function PlotMPCSol(robot, ground, mpc_sol, mpc_plot)
     % swing_pos = [];
     % torso_pos = [];
     % for i = 1:length(mpc_sol.q)
-    %     swing_pos(:, end + 1) = ForwardKinematics(robot, mpc_sol.q(:, i), qd, robot.swing, robot.foot_r);
-    %     torso_pos(:, end + 1) = ForwardKinematics(robot, mpc_sol.q(:, i), qd, 3, [0; 0]);
+    %     swing_pos(:, end + 1) = ForwardKinematics(robot, mpc_sol.q(:, i), qd, robot.swing, robot.foot_r) + offset;
+    %     torso_pos(:, end + 1) = ForwardKinematics(robot, mpc_sol.q(:, i), qd, 3, [0; 0]) + offset;
     % end
     % 
     % plot(swing_pos(1, :), swing_pos(2, :));
@@ -432,4 +440,40 @@ for i = 1:length(ground.xlength)
          ground.end_height(i)], "LineWidth", 2, "Color", "k");
     x0 = x0 + ground.xlength(i);
 end
+end
+
+%% Ground Functions
+function current_ground = GetCurrentGround(robot, q0, pos0, ground)
+    stance_xpos = GetStanceXPos(robot, q0, pos0);
+    if stance_xpos < 0 && stance_xpos > -1e-3
+        stance_xpos = 0;
+    end
+    current_ground = -1;
+    for j = 1:length(ground.xlength)
+        ground_bounds = GetGroundBounds(ground, j);
+        
+        if stance_xpos >= ground_bounds(1) && stance_xpos < ground_bounds(2)
+           current_ground = j;
+           break;
+        end
+    end
+
+    if current_ground == -1
+        error("foot not in a valid location!")
+    end
+end
+
+function xpos = GetStanceXPos(robot, q, pos)
+    pos_diff = pos - ForwardKinematics(robot, q, 0*q, 3, [0; 0]);
+    xpos = pos_diff(1);
+end
+
+function ground_bounds = GetGroundBounds(ground, idx)
+    ground_lb = 0;
+    for i = 1:idx-1
+        ground_lb = ground_lb + ground.xlength(i);
+    end
+
+    ground_ub = ground_lb + ground.xlength(idx);
+    ground_bounds = [ground_lb, ground_ub];
 end

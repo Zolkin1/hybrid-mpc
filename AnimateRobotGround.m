@@ -22,15 +22,6 @@ for i = 1:length(t)
         link_positions(:, j) = ForwardKinematics(robot, q(:, i), qd, j, robot.link{j});
     end
     
-    if i ~= 1 && e_idx <= length(te) && t(i) >= te(e_idx) && t(i-1) < te(e_idx)
-        while e_idx <= length(te) && t(i) >= te(e_idx) && t(i-1) < te(e_idx)
-            swing_foot_pos = ForwardKinematics(robot, qe(:, e_idx), ve(:, e_idx), robot.swing, robot.foot_r);
-            swing_foot_pos
-            te(e_idx)
-            offset = -swing_foot_pos + offset
-            e_idx = e_idx + 1;
-        end
-    end
     clf;
 
     hold on;
@@ -58,6 +49,16 @@ for i = 1:length(t)
         plot([joint_positions(1,j), link_positions(1,j)], [joint_positions(2,j), link_positions(2,j)], ...
             "Color", "#0072BD", "LineWidth", 2);
         scatter(joint_positions(1,j), joint_positions(2,j), [], [0.6350 0.0780 0.1840], "filled");
+    end
+
+    if i ~= 1 && e_idx <= length(te) && t(i) >= te(e_idx) && t(i-1) < te(e_idx)
+        while e_idx <= length(te) && t(i) >= te(e_idx) && t(i-1) < te(e_idx)
+            swing_foot_pos = ForwardKinematics(robot, qe(:, e_idx), ve(:, e_idx), robot.swing, robot.foot_r);
+            swing_foot_pos
+            te(e_idx)
+            offset = -swing_foot_pos + offset
+            e_idx = e_idx + 1;
+        end
     end
 
     drawnow limitrate;
